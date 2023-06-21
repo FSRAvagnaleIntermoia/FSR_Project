@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   mav_msgs
   nav_msgs
+  sensor_msgs
   tf
 )
 
@@ -152,8 +153,11 @@ include_directories(
 #   ${catkin_LIBRARIES}
 # )
 
-add_executable( my_actuator_publisher src/my_actuator_publisher.cpp)
-target_link_libraries ( my_actuator_publisher ${catkin_LIBRARIES}  )
+add_executable( actuator_publisher src/actuator_publisher.cpp)
+target_link_libraries ( actuator_publisher ${catkin_LIBRARIES}  )
+
+add_executable( wrench_publisher src/wrench_publisher.cpp)
+target_link_libraries ( wrench_publisher ${catkin_LIBRARIES}  )
 
 add_executable( hierarchical_controller src/hierarchical_controller.cpp)
 target_link_libraries ( hierarchical_controller ${catkin_LIBRARIES}  )

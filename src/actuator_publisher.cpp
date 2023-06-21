@@ -7,7 +7,7 @@ using namespace std;
 
 int main(int argc, char **argv) {
 
-	ros::init(argc, argv,"my_motor_cmd_publisher_topic");
+	ros::init(argc, argv,"actuator_publisher");
 	ros::NodeHandle nh;
 	ros::Publisher cmd_pub = nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
 

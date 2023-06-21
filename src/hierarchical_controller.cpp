@@ -1,6 +1,8 @@
 #include "ros/ros.h"
 #include "mav_msgs/Actuators.h"
 #include "nav_msgs/Odometry.h"
+#include "sensor_msgs/Imu.h"
+#include "Eigen/Dense"
 
 //Include tf libraries							
 #include "tf2_msgs/TFMessage.h"
@@ -9,131 +11,271 @@
 
 using namespace std;
 
+const double gravity = 9.81;
+const double mass = 1.56779;
+const double Ixx = 0.0347563;
+const double Iyy = 0.0458929;
+const double Izz = 0.0977;
+const double C_T = 0.00000854858;  //F_i = k_n * rotor_velocity_i^2
+const double C_Q = 0.016;  // M_i = k_m * F_i
+const double arm_length = 0.215;
+const int motor_number = 6;
+
+
+
+
 class hierarchical_controller {
 	public:
 		hierarchical_controller();			
+		void ctrl_loop();
         void run();
 
         void odom_callback( nav_msgs::Odometry odom );
-    
+		void imu_callback( sensor_msgs::Imu imu);
+
+
 	private:
 		ros::NodeHandle _nh;
         ros::Subscriber _odom_sub;
+        ros::Subscriber _imu_sub;
+
         ros::Publisher _act_pub;
 
-        double _x;
-        double _y;
-        double _z;
-        double _phi;
-        double _theta;
-        double _psi;
-        
+		tf::Vector3 _pos_ref;
+		tf::Vector3 _eta_ref;
+		tf::Vector3	_pos_ref_dot;
+		tf::Vector3 _eta_ref_dot;
+		tf::Vector3	_pos_ref_dot_dot;
+		tf::Vector3 _eta_ref_dot_dot;
+
+		tf::Matrix3x3 _Rb;
+	    tf::Matrix3x3 _R_enu2ned;
+		tf::Matrix3x3 _Q;
+		tf::Matrix3x3 _Q_dot;
+		tf::Matrix3x3 _Ib;
+		tf::Matrix3x3 _C;	
+
+		Eigen::Matrix4Xd _allocation_matrix;
+
+		tf::Vector3 _omega_b_b;
+
+		tf::Vector3 _p_b;
+		tf::Vector3 _p_b_dot;
+		tf::Vector3 _eta_b;
+		tf::Vector3 _eta_b_dot;
+
+
+//		tf::Matrix3x3 _Kp;
+//		tf::Matrix3x3 _Ke;
+		double _Kp;
+		double _Kp_dot;
+		double _Ke;
+		double _Ke_dot;
+
+		bool _first_imu;
+		bool _first_odom;
 };
 
 
-hierarchical_controller::hierarchical_controller() {
+tf::Matrix3x3 skew(tf::Vector3 v){
+	tf::Matrix3x3 Skew;
+	Skew[0][0] = 0;
+	Skew[0][1] = -v[2];
+	Skew[0][2] = v[1];
+	Skew[1][0] = v[2];
+	Skew[1][1] = 0;
+	Skew[1][2] = -v[0];
+	Skew[2][0] = -v[1];
+	Skew[2][1] = v[0];
+	Skew[2][2] = 0;
+	return Skew;
+}
+
+hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-3) , _eta_ref(0,0,M_PI/4) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0) , _R_enu2ned(1,0,0,0,-1,0,0,0,-1) , _Ib(Ixx,0,0,0,Iyy,0,0,0,Izz){
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &hierarchical_controller::odom_callback, this);	
+	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &hierarchical_controller::imu_callback, this);	
+	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
+
+	_allocation_matrix.resize(4,motor_number);
+	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
+						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
+						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
+						-C_Q,  C_Q, -C_Q,  C_Q, -C_Q, C_Q;
+
+/*  _R_enu2ned[0][0] = 1;
+    _R_enu2ned[1][0] = 0;
+    _R_enu2ned[2][0] = 0;
+    _R_enu2ned[0][1] = 0;
+    _R_enu2ned[1][1] = -1;
+    _R_enu2ned[2][1] = 0;
+    _R_enu2ned[0][2] = 0;
+    _R_enu2ned[1][2] = 0;
+    _R_enu2ned[2][2] = -1;
+*/	_first_imu = false;
+	_first_odom = false;
+
+	_Kp = 2;
+	_Kp_dot = 1;
+	_Ke = 20;
+	_Ke_dot = 10;
+
 }
 
 void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
-    _x = odom.pose.pose.position.x;
-    _y = odom.pose.pose.position.y;
-    _z = odom.pose.pose.position.z;
+	double phi, theta, psi;
 
-	tf::Matrix3x3 R;		//extract rotation from transform
-	R.setRotation(tf::Quaternion(odom.pose.pose.orientation.x,odom.pose.pose.orientation.y,odom.pose.pose.orientation.z,odom.pose.pose.orientation.w));
+    tf::Vector3 pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
+    tf::Vector3 vel_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z); 
+	
+    _p_b = _R_enu2ned*pos_enu;		//trasformazione da enu a ned -> pb è in ned
+	_p_b_dot = _R_enu2ned*vel_enu;
+	
+	tf::Matrix3x3 R(tf::Quaternion(odom.pose.pose.orientation.x,odom.pose.pose.orientation.y,odom.pose.pose.orientation.z,odom.pose.pose.orientation.w));
 
-    tf::Matrix3x3 R_enu2ned;
-    R_enu2ned[0][0] = 1;
-    R_enu2ned[1][0] = 0;
-    R_enu2ned[2][0] = 0;
-    R_enu2ned[0][1] = 0;
-    R_enu2ned[1][1] = -1;
-    R_enu2ned[2][1] = 0;
-    R_enu2ned[0][2] = 0;
-    R_enu2ned[1][2] = 0;
-    R_enu2ned[2][2] = -1;
+    tf::Matrix3x3 R_ned2p = _R_enu2ned.transpose()*R*_R_enu2ned;
 
-    tf::Vector3 pos_enu(_x,_y,_z);
-    tf::Vector3 pos_ned = R_enu2ned*pos_enu;
+    psi = atan2( R_ned2p[1][0] , R_ned2p[0][0] );
+    theta = atan2( -R_ned2p[2][0] , sqrt(R_ned2p[2][1]*R_ned2p[2][1] + R_ned2p[2][2]*R_ned2p[2][2]) );
+    phi = atan2( R_ned2p[2][1],R_ned2p[2][2] );
 
-    tf::Matrix3x3 R_ned2p = R_enu2ned.transpose()*R;
-
-    _psi = atan2( R_ned2p[1][0] , R_ned2p[0][0] );
-    _theta = atan2( -R_ned2p[2][0] , sqrt(R_ned2p[2][1]*R_ned2p[2][1] + R_ned2p[2][2]*R_ned2p[2][2]) );
-    _phi = atan2( R_ned2p[2][1],R_ned2p[2][2] );
-
+	_eta_b[0] = phi;
+	_eta_b[1] = theta;
+	_eta_b[2] = psi;
 /*
-    for(int i = 0 ; i < 3 ; i++){
-        for(int j = 0 ; j < 3 ; j++){
-            if (R[i][j] < 0.00000001)
-                R[i][j] = 0;
-        }
-    }
-*/
-
     cout << "x: " << pos_ned[0] << endl;  
     cout << "y: " << pos_ned[1] << endl;  
     cout << "z: " << pos_ned[2] << endl;  
-    cout << "phi: " << _phi << endl;  
-    cout << "theta: " << _theta << endl;  
-    cout << "psi: " << _psi << endl;
-    cout << R_ned2p[0][0] << " " << R_ned2p[0][1] << " " << R_ned2p[0][2] << endl;
-    cout << R_ned2p[1][0] << " " << R_ned2p[1][1] << " " << R_ned2p[1][2] << endl;
-    cout << R_ned2p[2][0] << " " << R_ned2p[2][1] << " " << R_ned2p[2][2] << endl << endl;
+    cout << "phi(deg): " << _phi * 180/M_PI << endl;  
+    cout << "theta(deg): " << _theta * 180/M_PI << endl;  
+    cout << "psi(deg): " << _psi * 180/M_PI << endl<<endl;
+*/
+	_Rb = R_ned2p;		//DA WORLD NED A BODY NED
+	
+
+//    cout << R_ned2p[0][0] << " " << R_ned2p[0][1] << " " << R_ned2p[0][2] << endl;
+//    cout << R_ned2p[1][0] << " " << R_ned2p[1][1] << " " << R_ned2p[1][2] << endl;
+//    cout << R_ned2p[2][0] << " " << R_ned2p[2][1] << " " << R_ned2p[2][2] << endl << endl;
+
+	_first_odom = true;
+}
+
+void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
+	tf::Vector3 omega_wenu_b(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z); 
+
+	tf::Vector3 omega_wned_b = _R_enu2ned.transpose()*omega_wenu_b;
+
+	_omega_b_b = _Rb.transpose()*omega_wned_b;				//NED
+
+	double phi = _eta_b[0];
+	double theta = _eta_b[1];
+	double phi_dot = _eta_b_dot[0];
+	double theta_dot = _eta_b_dot[1];
+
+	_Q[0][0] = 1;
+	_Q[0][1] = 0;
+	_Q[0][2] = -sin(theta);
+	_Q[1][0] = 0;
+	_Q[1][1] = cos(phi);
+	_Q[1][2] = cos(theta)*sin(phi);
+	_Q[2][0] = 0;
+	_Q[2][1] = -sin(phi);
+	_Q[2][2] = cos(theta)*cos(phi);	
+
+	_Q_dot[0][0] = 0;
+	_Q_dot[0][1] = 0;
+	_Q_dot[0][2] = -theta_dot*cos(theta);
+	_Q_dot[1][0] = 0;
+	_Q_dot[1][1] = -phi_dot*sin(phi);
+	_Q_dot[1][2] = -theta_dot*sin(theta)*sin(phi) + phi_dot*cos(theta)*cos(phi);
+	_Q_dot[2][0] = 0;
+	_Q_dot[2][1] = -phi_dot*cos(phi);
+	_Q_dot[2][2] = -theta_dot*sin(theta)*cos(phi) - phi_dot*cos(theta)*sin(phi);
+
+	_eta_b_dot = _Q.inverse()*_omega_b_b;
+
+	tf::Matrix3x3 C1, C2;
+	C1 = _Q.transpose()*skew(_Q*_eta_b_dot)*_Ib*_Q;
+	C2 = _Q.transpose()*_Ib*_Q_dot;
+	for(int i = 0 ; i<3;i++){
+		for(int j = 0 ; j<3;j++){
+			_C[i][j] = C1[i][j] + C2[i][j];
+		}
+	}
+
+	_first_imu = true;
 }
 
 
-/*
-void hierachical_controller::ctrl_loop() {	
+
+void hierarchical_controller::ctrl_loop() {	
 	ros::Rate rate(50);
-	while( !_first_fk ) usleep(0.1);
 
-	float i_cmd[5];			//define initial position joint values
-	i_cmd[0] = 0.0;
-	i_cmd[1] = 0.65;
-	i_cmd[2] = -1.9;
-	i_cmd[3] = -0.3;
-        i_cmd[4] = CLOSE_GRIPPER;
-	goto_initial_position( i_cmd );
+	tf::Vector3 e_p , e_p_dot, e_eta, e_eta_dot , mu_d , tau_tilde , tau_b ;
+	double u_T = 0;
+	Eigen::VectorXd angular_velocities_sq(motor_number);
+	Eigen::VectorXd control_input(4);
+    mav_msgs::Actuators act_msg;
+    act_msg.angular_velocities.resize(motor_number);
 
-	int error_var = 0;
-	double x_ref ,y_ref, z_ref ,yaw, pitch_ref;
-	pitch_ref = 0;
-	int gripper = 0;
-	int steps = 10;
 
-	string ln;
+	cout << "Waiting for sensors" << endl;
+	while (!_first_imu && !_first_odom) rate.sleep();
+
+	cout << "Take off" << endl;
+	for (int i = 0 ; i < motor_number ; i++){
+	    act_msg.angular_velocities[i] = 545;	
+	}
+	_act_pub.publish(act_msg);
+
+	sleep(5.0);
+	cout << "Control on" << endl;
 
 	while(ros::ok){
-		cout << "Press enter to start the trajectory execution" << endl;
-		getline(cin, ln);
-		cout << "Reference -- x: " << _x_marker << "  y: " << _y_marker << "  z: "<< _z_marker <<" pitch(deg): " << pitch_ref*180/M_PI << endl; 
-		
-		solve_move(_x_marker*2/3,_y_marker*2/3,_z_marker,-60*M_PI/180,1,_q_in,steps);	//go to intermediate position to prepare for grasping
-		sleep(7);
-		
-		solve_move(_x_marker,_y_marker,_z_marker+0.006,pitch_ref,1,_q_in,steps);		//go to the grasping position
-		sleep(6);
-		
-		solve_move(_x_marker,_y_marker,_z_marker, pitch_ref,0,_q_in,steps);				//close gripper
-		sleep(6); 
+		e_p = _p_b - _pos_ref;
+		e_p_dot = _p_b_dot - _pos_ref_dot;
+		e_eta = _eta_b - _eta_ref;
+		e_eta_dot = _eta_b_dot - _eta_ref_dot;
 
-		solve_move(0,0.1,0.2,pitch_ref,0,_q_in,steps);									//rise
-		sleep(6);
+		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot + _pos_ref_dot_dot;
+		tau_tilde = -_Ke*e_eta - _Ke_dot*e_eta_dot + _eta_ref_dot_dot;
 
-		solve_move(0.05,0.05,0.3,pitch_ref,0,_q_in,steps);								//celebration
-		sleep(6); 
-		solve_move(-0.05,0.05,0.3,pitch_ref,0,_q_in,steps);								
-		sleep(6); 
+	//	for (int i=0 ; i<3 ; i++)
+	//		cout <<mu_d[i] << endl;
+		cout <<endl;
 
-		goto_initial_position( i_cmd );
+		tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot;
+		u_T = mass*sqrt(mu_d[0]*mu_d[0] + mu_d[1]*mu_d[1] + (mu_d[2]-gravity)*(mu_d[2]-gravity));
+
+		control_input[0] = u_T;
+		control_input[1] = tau_b[0];
+		control_input[2] = tau_b[1];
+		control_input[3] = tau_b[2];
+
+		for (int i=0 ; i<4 ; i++)
+			cout <<control_input[i] << endl;
+		cout <<endl;
+	
+
+		angular_velocities_sq =  _allocation_matrix.transpose()*(_allocation_matrix*_allocation_matrix.transpose()).inverse() * control_input;
+
+		for (int i=0 ; i<motor_number ; i++){
+	//		cout << angular_velocities_sq(i) << endl;
+			if (angular_velocities_sq(i) >= 0) 
+		    act_msg.angular_velocities[i] = sqrt(angular_velocities_sq(i));	
+			if (angular_velocities_sq(i) < 0) 
+		    act_msg.angular_velocities[i] = -sqrt(-angular_velocities_sq(i));	
+		}
+	
+		_act_pub.publish(act_msg);
+
+	
+//		cout << "prova" << endl;
+		rate.sleep();		
 	}
 }
-*/
+
 void hierarchical_controller::run() {
-//	boost::thread get_dirkin_t( &red_fury_2_invkin::get_dirkin, this);
-//	boost::thread ctrl_loop_t ( &red_fury_2_invkin::ctrl_loop, this);
+	boost::thread ctrl_loop_t ( &hierarchical_controller::ctrl_loop, this);
 	ros::spin();	
 }
 
