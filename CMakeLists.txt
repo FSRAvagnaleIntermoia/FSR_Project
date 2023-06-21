@@ -8,9 +8,11 @@ project(fsr_pkg)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  mav_msgs
   roscpp
   std_msgs
+  mav_msgs
+  nav_msgs
+  tf
 )
 
 ## System dependencies are found with CMake's conventions
@@ -152,6 +154,9 @@ include_directories(
 
 add_executable( my_actuator_publisher src/my_actuator_publisher.cpp)
 target_link_libraries ( my_actuator_publisher ${catkin_LIBRARIES}  )
+
+add_executable( hierarchical_controller src/hierarchical_controller.cpp)
+target_link_libraries ( hierarchical_controller ${catkin_LIBRARIES}  )
 
 #############
 ## Install ##
