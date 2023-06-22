@@ -12,7 +12,7 @@ const double Ixx = 0.0347563;
 const double Iyy = 0.0458929;
 const double Izz = 0.0977;
 const double C_T = 0.00000854858;  //F_i = k_n * rotor_velocity_i^2
-const double C_Q = 0.016;  // M_i = k_m * F_i
+const double C_Q = 0.016*0.000000854858;  // M_i = k_m * F_i
 const double arm_length = 0.215;
 const int motor_number = 6;
 

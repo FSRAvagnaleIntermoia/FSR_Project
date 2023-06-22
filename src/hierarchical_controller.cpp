@@ -3,6 +3,8 @@
 #include "nav_msgs/Odometry.h"
 #include "sensor_msgs/Imu.h"
 #include "Eigen/Dense"
+#include "std_msgs/Float64.h"
+
 
 //Include tf libraries							
 #include "tf2_msgs/TFMessage.h"
@@ -17,7 +19,7 @@ const double Ixx = 0.0347563;
 const double Iyy = 0.0458929;
 const double Izz = 0.0977;
 const double C_T = 0.00000854858;  //F_i = k_n * rotor_velocity_i^2
-const double C_Q = 0.016;  // M_i = k_m * F_i
+const double C_Q = 0.016*0.00000854858;  // M_i = k_m * F_i
 const double arm_length = 0.215;
 const int motor_number = 6;
 
@@ -30,6 +32,8 @@ class hierarchical_controller {
 		void ctrl_loop();
         void run();
 
+
+		void ref_callback( std_msgs::Float64 psi_ref);
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
 
@@ -38,6 +42,7 @@ class hierarchical_controller {
 		ros::NodeHandle _nh;
         ros::Subscriber _odom_sub;
         ros::Subscriber _imu_sub;
+        ros::Subscriber _ref_sub;
 
         ros::Publisher _act_pub;
 
@@ -58,7 +63,6 @@ class hierarchical_controller {
 		Eigen::Matrix4Xd _allocation_matrix;
 
 		tf::Vector3 _omega_b_b;
-
 		tf::Vector3 _p_b;
 		tf::Vector3 _p_b_dot;
 		tf::Vector3 _eta_b;
@@ -91,7 +95,8 @@ tf::Matrix3x3 skew(tf::Vector3 v){
 	return Skew;
 }
 
-hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-3) , _eta_ref(0,0,M_PI/4) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0) , _R_enu2ned(1,0,0,0,-1,0,0,0,-1) , _Ib(Ixx,0,0,0,Iyy,0,0,0,Izz){
+hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref(0,0,0) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0) , _R_enu2ned(1,0,0,0,-1,0,0,0,-1) , _Ib(Ixx,0,0,0,Iyy,0,0,0,Izz){
+	_ref_sub = _nh.subscribe("/firefly/reference", 0, &hierarchical_controller::ref_callback, this);	
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &hierarchical_controller::odom_callback, this);	
 	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &hierarchical_controller::imu_callback, this);	
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
@@ -100,26 +105,24 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-3) , _eta_ref
 	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
 						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
 						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
-						-C_Q,  C_Q, -C_Q,  C_Q, -C_Q, C_Q;
+						C_Q,  -C_Q, C_Q,  -C_Q, C_Q, -C_Q;
 
-/*  _R_enu2ned[0][0] = 1;
-    _R_enu2ned[1][0] = 0;
-    _R_enu2ned[2][0] = 0;
-    _R_enu2ned[0][1] = 0;
-    _R_enu2ned[1][1] = -1;
-    _R_enu2ned[2][1] = 0;
-    _R_enu2ned[0][2] = 0;
-    _R_enu2ned[1][2] = 0;
-    _R_enu2ned[2][2] = -1;
-*/	_first_imu = false;
+
+	_first_imu = false;
 	_first_odom = false;
 
-	_Kp = 2;
-	_Kp_dot = 1;
-	_Ke = 20;
+	_Kp = 10;
+	_Kp_dot = 5;
+	_Ke = 50;
 	_Ke_dot = 10;
 
 }
+
+void hierarchical_controller::ref_callback( std_msgs::Float64 psi_ref ) {
+	_eta_ref[2] = psi_ref.data;
+}
+
+
 
 void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
 	double phi, theta, psi;
@@ -141,21 +144,8 @@ void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
 	_eta_b[0] = phi;
 	_eta_b[1] = theta;
 	_eta_b[2] = psi;
-/*
-    cout << "x: " << pos_ned[0] << endl;  
-    cout << "y: " << pos_ned[1] << endl;  
-    cout << "z: " << pos_ned[2] << endl;  
-    cout << "phi(deg): " << _phi * 180/M_PI << endl;  
-    cout << "theta(deg): " << _theta * 180/M_PI << endl;  
-    cout << "psi(deg): " << _psi * 180/M_PI << endl<<endl;
-*/
 	_Rb = R_ned2p;		//DA WORLD NED A BODY NED
 	
-
-//    cout << R_ned2p[0][0] << " " << R_ned2p[0][1] << " " << R_ned2p[0][2] << endl;
-//    cout << R_ned2p[1][0] << " " << R_ned2p[1][1] << " " << R_ned2p[1][2] << endl;
-//    cout << R_ned2p[2][0] << " " << R_ned2p[2][1] << " " << R_ned2p[2][2] << endl << endl;
-
 	_first_odom = true;
 }
 
@@ -208,7 +198,7 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 
 
 void hierarchical_controller::ctrl_loop() {	
-	ros::Rate rate(50);
+	ros::Rate rate(100);
 
 	tf::Vector3 e_p , e_p_dot, e_eta, e_eta_dot , mu_d , tau_tilde , tau_b ;
 	double u_T = 0;
@@ -230,30 +220,39 @@ void hierarchical_controller::ctrl_loop() {
 	sleep(5.0);
 	cout << "Control on" << endl;
 
+
+	double phi_ref , theta_ref;
+
 	while(ros::ok){
 		e_p = _p_b - _pos_ref;
 		e_p_dot = _p_b_dot - _pos_ref_dot;
-		e_eta = _eta_b - _eta_ref;
-		e_eta_dot = _eta_b_dot - _eta_ref_dot;
-
 		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot + _pos_ref_dot_dot;
-		tau_tilde = -_Ke*e_eta - _Ke_dot*e_eta_dot + _eta_ref_dot_dot;
+		u_T = mass*sqrt(mu_d[0]*mu_d[0] + mu_d[1]*mu_d[1] + (mu_d[2]-gravity)*(mu_d[2]-gravity));
 
 	//	for (int i=0 ; i<3 ; i++)
 	//		cout <<mu_d[i] << endl;
-		cout <<endl;
+	//	cout <<endl;
 
+
+		phi_ref = asin(mass/u_T*(mu_d[1]*cos(_eta_ref[2]) - mu_d[0]*sin(_eta_ref[2])));
+		theta_ref = atan((mu_d[0]*cos(_eta_ref[2]) + mu_d[1]*sin(_eta_ref[2]))/(mu_d[2]-gravity));
+
+		_eta_ref[0] = phi_ref;
+		_eta_ref[1] = theta_ref;
+
+		e_eta = _eta_b - _eta_ref;
+		e_eta_dot = _eta_b_dot - _eta_ref_dot;
+		tau_tilde = -_Ke*e_eta - _Ke_dot*e_eta_dot + _eta_ref_dot_dot;
 		tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot;
-		u_T = mass*sqrt(mu_d[0]*mu_d[0] + mu_d[1]*mu_d[1] + (mu_d[2]-gravity)*(mu_d[2]-gravity));
 
 		control_input[0] = u_T;
 		control_input[1] = tau_b[0];
 		control_input[2] = tau_b[1];
 		control_input[3] = tau_b[2];
 
-		for (int i=0 ; i<4 ; i++)
-			cout <<control_input[i] << endl;
-		cout <<endl;
+	//	for (int i=0 ; i<4 ; i++)
+	//		cout <<control_input[i] << endl;
+	//	cout <<endl;
 	
 
 		angular_velocities_sq =  _allocation_matrix.transpose()*(_allocation_matrix*_allocation_matrix.transpose()).inverse() * control_input;
@@ -268,7 +267,6 @@ void hierarchical_controller::ctrl_loop() {
 	
 		_act_pub.publish(act_msg);
 
-	
 //		cout << "prova" << endl;
 		rate.sleep();		
 	}
