@@ -22,6 +22,7 @@ const double C_T = 0.00000854858;  //F_i = k_n * rotor_velocity_i^2
 const double C_Q = 0.016*0.00000854858;  // M_i = k_m * F_i
 const double arm_length = 0.215;
 const int motor_number = 6;
+const double Ts = 0.01;
 
 
 
@@ -33,7 +34,23 @@ class hierarchical_controller {
         void run();
 
 
-		void ref_callback( std_msgs::Float64 psi_ref);
+
+
+		void x_ref_callback( std_msgs::Float64 msg);
+		void y_ref_callback( std_msgs::Float64 msg);
+		void z_ref_callback( std_msgs::Float64 msg);
+		void psi_ref_callback( std_msgs::Float64 msg);
+		void x_dot_ref_callback( std_msgs::Float64 msg);
+		void y_dot_ref_callback( std_msgs::Float64 msg);
+		void z_dot_ref_callback( std_msgs::Float64 msg);
+		void psi_dot_ref_callback( std_msgs::Float64 msg);
+		void x_dot_dot_ref_callback( std_msgs::Float64 msg);
+		void y_dot_dot_ref_callback( std_msgs::Float64 msg);
+		void z_dot_dot_ref_callback( std_msgs::Float64 msg);
+		void psi_dot_dot_ref_callback( std_msgs::Float64 msg);
+
+
+
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
 
@@ -42,7 +59,23 @@ class hierarchical_controller {
 		ros::NodeHandle _nh;
         ros::Subscriber _odom_sub;
         ros::Subscriber _imu_sub;
-        ros::Subscriber _ref_sub;
+
+		ros::Subscriber _x_sub;
+		ros::Subscriber _y_sub;
+		ros::Subscriber _z_sub;
+		ros::Subscriber _psi_sub;
+
+		ros::Subscriber _x_dot_sub;
+		ros::Subscriber _y_dot_sub;
+		ros::Subscriber _z_dot_sub;
+		ros::Subscriber _psi_dot_sub;
+
+		ros::Subscriber _x_dot_dot_sub;
+		ros::Subscriber _y_dot_dot_sub;
+		ros::Subscriber _z_dot_dot_sub;
+		ros::Subscriber _psi_dot_dot_sub;
+
+
 
         ros::Publisher _act_pub;
 
@@ -75,6 +108,8 @@ class hierarchical_controller {
 		double _Kp_dot;
 		double _Ke;
 		double _Ke_dot;
+		double _Ki;
+		double _Ki_e;
 
 		bool _first_imu;
 		bool _first_odom;
@@ -96,9 +131,22 @@ tf::Matrix3x3 skew(tf::Vector3 v){
 }
 
 hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref(0,0,0) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0) , _R_enu2ned(1,0,0,0,-1,0,0,0,-1) , _Ib(Ixx,0,0,0,Iyy,0,0,0,Izz){
-	_ref_sub = _nh.subscribe("/firefly/reference", 0, &hierarchical_controller::ref_callback, this);	
+
+	_x_sub = _nh.subscribe("/firefly/planner/x_ref", 0, &hierarchical_controller::x_ref_callback, this);	
+	_y_sub = _nh.subscribe("/firefly/planner/y_ref", 0, &hierarchical_controller::y_ref_callback, this);	
+	_z_sub = _nh.subscribe("/firefly/planner/z_ref", 0, &hierarchical_controller::z_ref_callback, this);	
+	_psi_sub = _nh.subscribe("/firefly/planner/psi_ref", 0, &hierarchical_controller::psi_ref_callback, this);	
+	_x_dot_sub = _nh.subscribe("/firefly/planner/x_dot_ref", 0, &hierarchical_controller::x_dot_ref_callback, this);	
+	_y_dot_sub = _nh.subscribe("/firefly/planner/y_dot_ref", 0, &hierarchical_controller::y_dot_ref_callback, this);	
+	_z_dot_sub = _nh.subscribe("/firefly/planner/z_dot_ref", 0, &hierarchical_controller::z_dot_ref_callback, this);	
+	_psi_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_ref", 0, &hierarchical_controller::psi_dot_ref_callback, this);	
+	_x_dot_dot_sub = _nh.subscribe("/firefly/planner/x_dot_dot_ref", 0, &hierarchical_controller::x_dot_dot_ref_callback, this);	
+	_y_dot_dot_sub = _nh.subscribe("/firefly/planner/y_dot_dot_ref", 0, &hierarchical_controller::y_dot_dot_ref_callback, this);	
+	_z_dot_dot_sub = _nh.subscribe("/firefly/planner/z_dot_dot_ref", 0, &hierarchical_controller::z_dot_dot_ref_callback, this);	
+	_psi_dot_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_dot_ref", 0, &hierarchical_controller::psi_dot_dot_ref_callback, this);	
+
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &hierarchical_controller::odom_callback, this);	
-	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &hierarchical_controller::imu_callback, this);	
+	_imu_sub = _nh.subscribe("/firefly/imu", 0, &hierarchical_controller::imu_callback, this);	
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
 
 	_allocation_matrix.resize(4,motor_number);
@@ -111,16 +159,58 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_first_imu = false;
 	_first_odom = false;
 
-	_Kp = 10;
-	_Kp_dot = 5;
-	_Ke = 50;
-	_Ke_dot = 10;
+	_Kp = 2;
+	_Kp_dot = 1;
+	_Ke = 10;
+	_Ke_dot = 5;
+	_Ki = 0.1;
+	_Ki_e = 0.1;
 
 }
 
-void hierarchical_controller::ref_callback( std_msgs::Float64 psi_ref ) {
-	_eta_ref[2] = psi_ref.data;
+
+void hierarchical_controller::x_ref_callback( std_msgs::Float64 msg){
+	_pos_ref[0] = msg.data;
 }
+void hierarchical_controller::y_ref_callback( std_msgs::Float64 msg){
+	_pos_ref[1] = msg.data;
+}
+void hierarchical_controller::z_ref_callback( std_msgs::Float64 msg){
+	_pos_ref[2] = msg.data;
+}
+void hierarchical_controller::psi_ref_callback( std_msgs::Float64 msg){
+	_eta_ref[2] = msg.data;
+}
+
+
+
+void hierarchical_controller::x_dot_ref_callback( std_msgs::Float64 msg){
+	_pos_ref_dot[0] = msg.data;
+}
+void hierarchical_controller::y_dot_ref_callback( std_msgs::Float64 msg){
+	_pos_ref_dot[1] = msg.data;
+}
+void hierarchical_controller::z_dot_ref_callback( std_msgs::Float64 msg){
+	_pos_ref_dot[2] = msg.data;
+}
+void hierarchical_controller::psi_dot_ref_callback( std_msgs::Float64 msg){
+	_eta_ref_dot[2] = msg.data;
+}
+
+
+void hierarchical_controller::x_dot_dot_ref_callback( std_msgs::Float64 msg){
+	_pos_ref_dot_dot[0] = msg.data;
+}
+void hierarchical_controller::y_dot_dot_ref_callback( std_msgs::Float64 msg){
+	_pos_ref_dot_dot[1] = msg.data;
+}
+void hierarchical_controller::z_dot_dot_ref_callback( std_msgs::Float64 msg){
+	_pos_ref_dot_dot[2] = msg.data;
+}
+void hierarchical_controller::psi_dot_dot_ref_callback( std_msgs::Float64 msg){
+	_eta_ref_dot_dot[2] = msg.data;
+}
+
 
 
 
@@ -200,7 +290,13 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 void hierarchical_controller::ctrl_loop() {	
 	ros::Rate rate(100);
 
-	tf::Vector3 e_p , e_p_dot, e_eta, e_eta_dot , mu_d , tau_tilde , tau_b ;
+	tf::Vector3 e_p , e_p_dot, e_p_int , e_eta, e_eta_dot, e_eta_int , mu_d , tau_tilde , tau_b ;
+	for(int i = 0 ; i < 3 ; i++){
+		e_p_int[i] = 0;
+		e_eta_int[i] = 0;
+	}
+
+
 	double u_T = 0;
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 	Eigen::VectorXd control_input(4);
@@ -213,7 +309,7 @@ void hierarchical_controller::ctrl_loop() {
 
 	cout << "Take off" << endl;
 	for (int i = 0 ; i < motor_number ; i++){
-	    act_msg.angular_velocities[i] = 545;	
+	    act_msg.angular_velocities[i] = 545.5;	
 	}
 	_act_pub.publish(act_msg);
 
@@ -221,29 +317,49 @@ void hierarchical_controller::ctrl_loop() {
 	cout << "Control on" << endl;
 
 
-	double phi_ref , theta_ref;
+	double phi_ref , theta_ref , phi_ref_dot, theta_ref_dot , phi_ref_dot_dot , theta_ref_dot_dot , phi_ref_old = 0 , theta_ref_old = 0 , phi_ref_dot_old = 0 , theta_ref_dot_old = 0 ;
 
 	while(ros::ok){
 		e_p = _p_b - _pos_ref;
 		e_p_dot = _p_b_dot - _pos_ref_dot;
-		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot + _pos_ref_dot_dot;
+		for(int i = 0 ; i < 3 ; i++){
+			e_p_int[i] = e_p_int[i] + e_p[i]*Ts;
+			e_eta_int[i] = e_eta_int[i] + e_eta[i]*Ts;
+		}
+
+		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot;
 		u_T = mass*sqrt(mu_d[0]*mu_d[0] + mu_d[1]*mu_d[1] + (mu_d[2]-gravity)*(mu_d[2]-gravity));
 
-	//	for (int i=0 ; i<3 ; i++)
-	//		cout <<mu_d[i] << endl;
-	//	cout <<endl;
+		for (int i=0 ; i<3 ; i++)
+			cout <<_pos_ref[i] << endl;
+		cout << _eta_ref[2]*180/M_PI << endl << endl;
 
 
 		phi_ref = asin(mass/u_T*(mu_d[1]*cos(_eta_ref[2]) - mu_d[0]*sin(_eta_ref[2])));
+		phi_ref_dot = (phi_ref-phi_ref_old)*100;  // Ts=0.01
+		phi_ref_dot_dot = (phi_ref_dot-phi_ref_dot_old)*100;  // Ts=0.01
+
 		theta_ref = atan((mu_d[0]*cos(_eta_ref[2]) + mu_d[1]*sin(_eta_ref[2]))/(mu_d[2]-gravity));
+		theta_ref_dot = (theta_ref-theta_ref_old)*100;  // Ts=0.01
+		theta_ref_dot_dot = (theta_ref_dot-theta_ref_dot_old)*100;  // Ts=0.01
 
 		_eta_ref[0] = phi_ref;
 		_eta_ref[1] = theta_ref;
+		_eta_ref_dot[0] = phi_ref_dot;
+		_eta_ref_dot[1] = theta_ref_dot;
+//		_eta_ref_dot_dot[0] = phi_ref_dot_dot;
+//		_eta_ref_dot_dot[1] = theta_ref_dot_dot;				
 
 		e_eta = _eta_b - _eta_ref;
 		e_eta_dot = _eta_b_dot - _eta_ref_dot;
-		tau_tilde = -_Ke*e_eta - _Ke_dot*e_eta_dot + _eta_ref_dot_dot;
+		tau_tilde = -_Ke*e_eta - _Ke_dot*e_eta_dot - _Ki_e*e_eta_int + _eta_ref_dot_dot;
 		tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot;
+
+		phi_ref_old = phi_ref;
+		theta_ref_old = theta_ref;
+		phi_ref_dot_old = phi_ref_dot;
+		theta_ref_dot_old = theta_ref_dot;		
+
 
 		control_input[0] = u_T;
 		control_input[1] = tau_b[0];

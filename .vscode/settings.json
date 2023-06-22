@@ -17,6 +17,9 @@
         "vector": "cpp",
         "hash_map": "cpp",
         "hash_set": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "array": "cpp",
+        "string_view": "cpp",
+        "complex": "cpp"
     }
 }

@@ -164,6 +164,9 @@ target_link_libraries ( hierarchical_controller ${catkin_LIBRARIES}  )
 
 add_executable( reference_publisher src/reference_publisher.cpp)
 target_link_libraries ( reference_publisher ${catkin_LIBRARIES}  )
+
+add_executable( low_level_planner src/low_level_planner.cpp)
+target_link_libraries ( low_level_planner ${catkin_LIBRARIES}  )
 #############
 ## Install ##
 #############
