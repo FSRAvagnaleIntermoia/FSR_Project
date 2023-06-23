@@ -55,6 +55,8 @@ class low_level_planner {
 		Eigen::VectorXd _psi_ref_dot_dot;
 
 		int _time_len;
+		double _ttot, _x0, _y0, _z0, _psi0, _xf, _yf, _zf, _psif;
+	
 
 		Eigen::VectorXd _time;
 
@@ -78,18 +80,11 @@ low_level_planner::low_level_planner(){
 	_z_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_dot_ref", 1);
 	_psi_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/psi_dot_dot_ref", 1);
 
-	double ttot, x0, y0, z0, psi0, xf, yf, zf, psif;
-	ttot = 20.0;
-	x0 = 0;
-	y0 = 0;
-	z0 = -1;
-	psi0 = 0;
-	xf = 10;
-	yf = 10;
-	zf = -1;
-	psif = 0;
+	_x0 = 0;
+	_y0 = 0;
+	_z0 = -1;
+	_psi0 = 0;
 
-	init_trajectory(ttot,x0,y0,z0,psi0,xf,yf,zf,psif);
 }
 
 void low_level_planner::init_trajectory(double ttot , double x0, double y0, double z0, double psi0, double xf, double yf, double zf, double psif ){
@@ -147,7 +142,7 @@ void low_level_planner::ref_var_filler( Eigen::VectorXd & var_ref, Eigen::Vector
 	a1(idx) = a_temp(6);
 	a0(idx) = a_temp(7);
 
-	double t;
+	double t = 0;
 	for (int i = 0 ; i < _time_len ; i++){
 		t = i*Ts;
 		var_ref(i) = a7(idx)*pow(t,7) + a6(idx)*pow(t,6) + a5(idx)*pow(t,5) + a4(idx)*pow(t,4) + a3(idx)*pow(t,3) + a2(idx)*pow(t,2) +  a1(idx)*t + a0(idx);  
@@ -164,7 +159,21 @@ void low_level_planner::low_level_planner_loop() {
 	int time_idx = 0;
 	std_msgs::Float64 msg;
 	while(ros::ok){
-		if (time_idx < _time_len){
+		std::cout << "Insert x reference" << endl;
+		std::cin >> _xf;
+		std::cout << "Insert y reference" << endl;
+		std::cin >> _yf;
+		std::cout << "Insert z reference" << endl;
+		std::cin >> _zf;
+		std::cout << "Insert psi reference" << endl;
+		std::cin >> _psif;
+		std::cout << "Insert time length" << endl;
+		std::cin >> _ttot;
+
+		init_trajectory(_ttot,_x0,_y0,_z0,_psi0,_xf,_yf,_zf,_psif);
+
+
+		while (time_idx < _time_len){
 			msg.data = _x_ref(time_idx);
 			_x_pub.publish(msg);
 			msg.data = _y_ref(time_idx);
@@ -193,8 +202,18 @@ void low_level_planner::low_level_planner_loop() {
 			_psi_dot_dot_pub.publish(msg);
 			
 			time_idx ++;	
+			rate.sleep();		
 		}
-		rate.sleep();		
+		_x0 = _xf;
+		_y0 = _yf;
+		_z0 = _zf;
+		_psi0 = _psif;
+		
+
+
+		time_idx = 0;
+
+
 	}
 }
 
