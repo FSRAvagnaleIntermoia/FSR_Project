@@ -1,0 +1,104 @@
+<launch>
+  <arg name="mav_name" default="firefly"/>
+  <arg name="world_name" default="custom_world"/>
+  <arg name="enable_logging" default="false"/>
+  <arg name="enable_ground_truth" default="true"/>
+  <arg name="log_file" default="$(arg mav_name)"/>
+  <arg name="debug" default="false"/>
+  <arg name="gui" default="true"/>
+  <arg name="paused" default="true"/>
+  <!-- The following line causes gzmsg and gzerr messages to be printed to the console
+      (even when Gazebo is started through roslaunch) -->
+  <arg name="verbose" default="false"/>
+
+  <env name="GAZEBO_MODEL_PATH" value="${GAZEBO_MODEL_PATH}:$(find rotors_gazebo)/models"/>
+  <env name="GAZEBO_RESOURCE_PATH" value="${GAZEBO_RESOURCE_PATH}:$(find rotors_gazebo)/models"/>
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find rotors_gazebo)/worlds/$(arg world_name).world"/>
+    <arg name="debug" value="$(arg debug)" />
+    <arg name="paused" value="$(arg paused)" />
+    <arg name="gui" value="$(arg gui)" />
+    <arg name="verbose" value="$(arg verbose)"/>
+  </include>
+
+  <group ns="$(arg mav_name)">
+    <include file="$(find rotors_gazebo)/launch/spawn_mav.launch">
+      <arg name="mav_name" value="$(arg mav_name)" />
+      <arg name="model" value="$(find rotors_description)/urdf/$(arg mav_name)_base.xacro" />
+      <arg name="enable_logging" value="$(arg enable_logging)" />
+      <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
+      <arg name="log_file" value="$(arg log_file)"/>
+    </include>
+  </group>
+
+	<param name="colonna_description" textfile="$(find fsr_pkg)/urdf/colonna.urdf" />              
+
+  <node name="spawn_colonna1" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/colonna.urdf -urdf 
+         -x 2.0
+         -y 2.0
+         -z 2.5
+         -model colonna1"
+   respawn="false" output="screen">
+  </node>
+
+  <node name="spawn_colonna2" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/colonna.urdf -urdf 
+         -x 6.0
+         -y 2.0
+         -z 2.5
+         -model colonna2"
+   respawn="false" output="screen">
+  </node>
+
+  <node name="spawn_colonna3" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/colonna.urdf -urdf 
+         -x 0.0
+         -y 6.0
+         -z 2.5
+         -model colonna3"
+   respawn="false" output="screen">
+  </node>  
+
+  <node name="spawn_colonna4" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/colonna.urdf -urdf 
+         -x 4.0
+         -y 6.0
+         -z 2.5
+         -model colonna4"
+   respawn="false" output="screen">
+  </node>  
+
+  <node name="spawn_colonna5" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/colonna.urdf -urdf 
+         -x 8.0
+         -y 6.0
+         -z 2.5
+         -model colonna5"
+   respawn="false" output="screen">
+  </node>  
+
+  <node name="spawn_colonna6" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/colonna.urdf -urdf 
+         -x 2.0
+         -y 8.0
+         -z 2.5
+         -model colonna6"
+   respawn="false" output="screen">
+  </node>  
+
+  <node name="spawn_colonna7" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/colonna.urdf -urdf 
+         -x 6.0
+         -y 8.0
+         -z 2.5
+         -model colonna7"
+   respawn="false" output="screen">
+  </node>  
+
+
+
+
+</launch>
+
+

@@ -167,6 +167,10 @@ target_link_libraries ( reference_publisher ${catkin_LIBRARIES}  )
 
 add_executable( low_level_planner src/low_level_planner.cpp)
 target_link_libraries ( low_level_planner ${catkin_LIBRARIES}  )
+
+add_executable( artificial_potential_planner src/artificial_potential_planner.cpp)
+target_link_libraries ( artificial_potential_planner ${catkin_LIBRARIES}  )
+
 #############
 ## Install ##
 #############

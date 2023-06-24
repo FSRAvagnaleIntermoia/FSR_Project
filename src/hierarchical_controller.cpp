@@ -134,7 +134,7 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_psi_dot_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_dot_ref", 0, &hierarchical_controller::psi_dot_dot_ref_callback, this);	
 
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &hierarchical_controller::odom_callback, this);	
-	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &hierarchical_controller::imu_callback, this);	
+	_imu_sub = _nh.subscribe("/firefly/imu", 0, &hierarchical_controller::imu_callback, this);	
 
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
 
@@ -154,8 +154,8 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_Kp_dot = 1;
 	_Ke = 50;
 	_Ke_dot = 10;
-	_Ki = 0.1;
-	_Ki_e = 0;
+	_Ki = 0.2;
+	_Ki_e = 0.1;
 
 	_Q.setIdentity();
 
@@ -387,8 +387,10 @@ void hierarchical_controller::ctrl_loop() {
 		_tau_pub.publish(tauz_msg);
 	
 
-		for (int i=0 ; i<4 ; i++)
-			std::cout <<control_input[i] << endl;
+		for (int i=0 ; i<3 ; i++)
+	//		std::cout <<control_input[i] << endl;
+			std::cout <<e_p[i] << endl;
+
 		std::cout <<endl;
 	
 
