@@ -171,6 +171,9 @@ target_link_libraries ( low_level_planner ${catkin_LIBRARIES}  )
 add_executable( artificial_potential_planner src/artificial_potential_planner.cpp)
 target_link_libraries ( artificial_potential_planner ${catkin_LIBRARIES}  )
 
+add_executable( odometry src/odometry.cpp)
+target_link_libraries ( odometry ${catkin_LIBRARIES}  )
+
 #############
 ## Install ##
 #############

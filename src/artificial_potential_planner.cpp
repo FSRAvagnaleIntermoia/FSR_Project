@@ -28,6 +28,7 @@ class artificial_potential_planner {
         void odom_callback( nav_msgs::Odometry odom );
 
 		void init_obstacles();
+		void stop_drone();
 
 		void artificial_potential_planner_loop();	
 		void run();
@@ -82,10 +83,10 @@ artificial_potential_planner::artificial_potential_planner(){
 	_goal_pos[1] = -7;
 	_goal_pos[2] = -2;
 
-	_Kb = 0.1;
+	_Kb = 0.5;
 	_Ka = _Kb*2;
 	_Kd = 1;
-	_K_obs = 0.01;
+	_K_obs = 0.05;
 //	_eta_obs_i = 1.5;
 
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &artificial_potential_planner::odom_callback, this);	
@@ -109,31 +110,31 @@ artificial_potential_planner::artificial_potential_planner(){
 void artificial_potential_planner::init_obstacles(){
 
 	obstacle_array[0].pos_obs << 2,-2,2.5;
-	obstacle_array[0]._eta_obs_i = 1.5;
+	obstacle_array[0]._eta_obs_i = 2;
 	obstacle_array[0].radius = 0.5;
 
 	obstacle_array[1].pos_obs << 6,-2,2.5;
-	obstacle_array[1]._eta_obs_i = 1.5;
+	obstacle_array[1]._eta_obs_i = 2;
 	obstacle_array[1].radius = 0.5;
 
 	obstacle_array[2].pos_obs << 0,-6,2.5;
-	obstacle_array[2]._eta_obs_i = 1.5;
+	obstacle_array[2]._eta_obs_i = 2;
 	obstacle_array[2].radius = 0.5;
 
 	obstacle_array[3].pos_obs << 4,-6,2.5;
-	obstacle_array[3]._eta_obs_i = 1.5;
+	obstacle_array[3]._eta_obs_i = 2;
 	obstacle_array[3].radius = 0.5;
 
 	obstacle_array[4].pos_obs << 8,-6,2.5;
-	obstacle_array[4]._eta_obs_i = 1.5;
+	obstacle_array[4]._eta_obs_i = 2;
 	obstacle_array[4].radius = 0.5;
 
 	obstacle_array[5].pos_obs << 2,-8,2.5;
-	obstacle_array[5]._eta_obs_i = 1.5;
+	obstacle_array[5]._eta_obs_i = 2;
 	obstacle_array[5].radius = 0.5;
 
 	obstacle_array[6].pos_obs << 6,-8,2.5;
-	obstacle_array[6]._eta_obs_i = 1.5;
+	obstacle_array[6]._eta_obs_i = 2;
 	obstacle_array[6].radius = 0.5;
 }
 
@@ -189,9 +190,10 @@ Eigen::Vector3d artificial_potential_planner::repulsive_force_calc( double x_obs
 
 //	cout << "grad_eta:" << endl << grad_eta_i << endl;
 
-	
+	int gamma = 2;
+
 	if (eta_i <= eta_obs_i){
-		f_rep = _K_obs/pow(eta_i,2)*pow( (1/eta_i) - 1/eta_obs_i ,  1)*grad_eta_i;
+		f_rep = _K_obs/pow(eta_i,2)*pow( (1/eta_i) - 1/eta_obs_i ,  gamma-1 )*grad_eta_i;
 	//	cout << "f_rep:" << endl << f_rep << endl;	
 	}
 	else{
@@ -205,6 +207,23 @@ Eigen::Vector3d artificial_potential_planner::repulsive_force_calc( double x_obs
 }
 
 
+void artificial_potential_planner::stop_drone(){
+	std_msgs::Float64 msg;
+
+	msg.data = _goal_pos(0);
+	_x_pub.publish(msg);
+	msg.data = _goal_pos(1);
+	_y_pub.publish(msg);
+	msg.data = _goal_pos(2);
+	_z_pub.publish(msg);
+	msg.data = 0;
+	_x_dot_pub.publish(msg);
+	_y_dot_pub.publish(msg);
+	_z_dot_pub.publish(msg);
+	_x_dot_dot_pub.publish(msg);
+	_y_dot_dot_pub.publish(msg);
+	_z_dot_dot_pub.publish(msg);
+}
 
 
 
@@ -221,70 +240,83 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 	std_msgs::Float64 msg;
 
 	Eigen::Vector3d attractive_force , total_repulsive_force;
+	bool finish = false;
 
 	while(ros::ok){
+		std::cout << "Insert x reference" << endl;
+		std::cin >> _goal_pos[0];
+		std::cout << "Insert y reference" << endl;
+		std::cin >> _goal_pos[1];
+		std::cout << "Insert z reference" << endl;
+		std::cin >> _goal_pos[2];
+		finish = false;
+		while ( !finish ){
+			attractive_force = attractive_force_calc();
+			total_repulsive_force.setZero();
+			for (int i = 0 ; i < obstacle_array_size ; i++){
+				total_repulsive_force = total_repulsive_force + repulsive_force_calc( obstacle_array[i].pos_obs(0) , obstacle_array[i].pos_obs(1) , obstacle_array[i].pos_obs(2) , obstacle_array[i]._eta_obs_i , obstacle_array[i].radius);
+			}
 
-		attractive_force = attractive_force_calc();
-		total_repulsive_force.setZero();
-		for (int i = 0 ; i < obstacle_array_size ; i++){
-			total_repulsive_force = total_repulsive_force + repulsive_force_calc( obstacle_array[i].pos_obs(0) , obstacle_array[i].pos_obs(1) , obstacle_array[i].pos_obs(2) , obstacle_array[i]._eta_obs_i , obstacle_array[i].radius);
+			p_dot = attractive_force + total_repulsive_force;
+
+			cout << "f attr: " << endl <<attractive_force << endl;
+			cout << "f rep: " << endl <<total_repulsive_force << endl;
+
+
+			
+			p = p + p_dot/rate;		
+
+			p_dot_dot = (p_dot - p_dot_old)*rate;
+
+
+	//		p_dot_dot_f = 0.99*p_dot_dot_old_f + p_dot_dot*0.00995;  	//frequenza di taglio a 2 PI
+	//		p_dot_dot_old_f = p_dot_dot_f;
+
+
+	//		p_dot = p_dot + p_dot_dot/rate;
+	//		p = p + p_dot/rate; 
+
+
+			msg.data = p(0);
+			_x_pub.publish(msg);
+			msg.data = p(1);
+			_y_pub.publish(msg);
+			msg.data = p(2);
+			_z_pub.publish(msg);
+
+			msg.data = p_dot(0);
+			_x_dot_pub.publish(msg);
+			msg.data = p_dot(1);
+			_y_dot_pub.publish(msg);
+			msg.data = p_dot(2);
+			_z_dot_pub.publish(msg);
+			
+			msg.data = p_dot_dot(0);
+			_x_dot_dot_pub.publish(msg);
+			msg.data = p_dot_dot(1);
+			_y_dot_dot_pub.publish(msg);
+			msg.data = p_dot_dot(2);
+			_z_dot_dot_pub.publish(msg);
+
+	//		cout << p_dot_dot << endl << endl;
+	//		cout << "p:" << p << endl << endl;
+			p_dot_old = p_dot;
+
+			if ( (abs((_goal_pos[0]-_pos[0])) < 0.01) && (abs((_goal_pos[1]-_pos[1]))< 0.01) && (abs((_goal_pos[2]-_pos[2])) < 0.01)){
+				stop_drone();
+				finish = true;
+			}
+
+
+			usleep(1000000/rate);
 		}
-	//	p_dot_dot = attractive_force_calc() + repulsive_force_calc(5,0,0,0.5) + repulsive_force_calc(5,2,0,0.5) + repulsive_force_calc(5,-2,0,0.5);
-
-
-		p_dot = attractive_force+ total_repulsive_force;
-
-		cout << "f attr: " << endl <<attractive_force << endl;
-		cout << "f rep: " << endl <<total_repulsive_force << endl;
-
-
-		
-		p = p + p_dot/rate;		
-
-		p_dot_dot = (p_dot - p_dot_old)*rate;
-
-
-//		p_dot_dot_f = 0.99*p_dot_dot_old_f + p_dot_dot*0.00995;  	//frequenza di taglio a 2 PI
-//		p_dot_dot_old_f = p_dot_dot_f;
-
-
-//		p_dot = p_dot + p_dot_dot/rate;
-		p = p + p_dot/rate; 
-
-
-		msg.data = p(0);
-		_x_pub.publish(msg);
-		msg.data = p(1);
-		_y_pub.publish(msg);
-		msg.data = p(2);
-		_z_pub.publish(msg);
-
-		msg.data = p_dot(0);
-		_x_dot_pub.publish(msg);
-		msg.data = p_dot(1);
-		_y_dot_pub.publish(msg);
-		msg.data = p_dot(2);
-		_z_dot_pub.publish(msg);
-		
-		msg.data = p_dot_dot(0);
-		_x_dot_dot_pub.publish(msg);
-		msg.data = p_dot_dot(1);
-		_y_dot_dot_pub.publish(msg);
-		msg.data = p_dot_dot(2);
-		_z_dot_dot_pub.publish(msg);
-
-//		cout << p_dot_dot << endl << endl;
-//		cout << "p:" << p << endl << endl;
-		p_dot_old = p_dot;
-
-		usleep(1000000/rate);
 	}
-
 }
 
 
 void artificial_potential_planner::run() {
 	boost::thread artificial_potential_planner_loop_t ( &artificial_potential_planner::artificial_potential_planner_loop, this);
+
 	ros::spin();	
 }
 
