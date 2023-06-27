@@ -4,6 +4,8 @@
 #include "sensor_msgs/Imu.h"
 #include "Eigen/Dense"
 #include "std_msgs/Float64.h"
+#include "std_msgs/Float64MultiArray.h"
+#include "geometry_msgs/Wrench.h"
 
 
 //Include tf libraries							
@@ -52,6 +54,8 @@ class hierarchical_controller {
 
 
 
+
+
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
 
@@ -79,7 +83,7 @@ class hierarchical_controller {
 
 
         ros::Publisher _act_pub;
-        ros::Publisher _uT_pub;
+        ros::Publisher _wrench_pub;
 
 		tf::Vector3 _pos_ref;
 		tf::Vector3 _eta_ref;
@@ -119,12 +123,18 @@ class hierarchical_controller {
 
 //		tf::Matrix3x3 _Kp;
 //		tf::Matrix3x3 _Ke;
+		tf::Matrix3x3 _Ke;
 		double _Kp;
 		double _Kp_dot;
-		double _Ke;
-		double _Ke_dot;
+//		double _Ke;
+//		double _Ke_dot;
 		double _Ki;
-		double _Ki_e;
+//		double _Ki_e;
+
+		tf::Matrix3x3 _Ke_dot;
+		tf::Matrix3x3 _Ki_e;
+
+
 
 		double _u_T;
 		tf::Vector3 _tau_b;
@@ -156,7 +166,7 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &hierarchical_controller::imu_callback, this);	
 
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
-	_uT_pub = _nh.advertise<std_msgs::Float64>("/firefly/uT", 1);
+	_wrench_pub = _nh.advertise<geometry_msgs::Wrench>("/firefly/command/wrench", 1);
 
 
 	_allocation_matrix.resize(4,motor_number);
@@ -172,10 +182,10 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 
 	_Kp = 2;
 	_Kp_dot = 1;
-	_Ke = 50;
-	_Ke_dot = 10;
+	_Ke = tf::Matrix3x3(50,0,0,0,50,0,0,0,25);
+	_Ke_dot = tf::Matrix3x3(10,0,0,0,10,0,0,0,5);
 	_Ki = 0.2;
-	_Ki_e = 0.1;
+	_Ki_e = tf::Matrix3x3(0.1,0,0,0,0.1,0,0,0,0.05);
 
 	_Q.setIdentity();
 	_Rb.setIdentity();
@@ -420,7 +430,6 @@ void hierarchical_controller::ctrl_loop() {
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 	Eigen::VectorXd control_input(4);
     mav_msgs::Actuators act_msg;
-    std_msgs::Float64 uT_msg;
     act_msg.angular_velocities.resize(motor_number);
 
 
@@ -431,9 +440,6 @@ void hierarchical_controller::ctrl_loop() {
 	for (int i = 0 ; i < motor_number ; i++){
 	    act_msg.angular_velocities[i] = 545.1;	
 	}
-	uT_msg.data = pow( 545.1, 2 )*C_T*motor_number;
-	_uT_pub.publish(uT_msg);
-
 
 	_act_pub.publish(act_msg);
 
@@ -515,9 +521,20 @@ void hierarchical_controller::ctrl_loop() {
 
 		e_eta = _eta_b - _eta_ref;
 		e_eta_dot = _eta_b_dot - _eta_ref_dot;
-		tau_tilde = -_Ke*e_eta - _Ke_dot*e_eta_dot - _Ki_e*e_eta_int + _eta_ref_dot_dot;
+		tau_tilde = _Ke*e_eta*(-1) - _Ke_dot*e_eta_dot - _Ki_e*e_eta_int + _eta_ref_dot_dot;
 
 		_tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot;// -(_Q.transpose()).inverse()*_tf_est_dist_ang;
+
+		geometry_msgs::Wrench wrench_msg;
+		wrench_msg.force.x = 0;
+		wrench_msg.force.y = 0;
+		wrench_msg.force.z = -_u_T;
+		wrench_msg.torque.x = _tau_b[0];
+		wrench_msg.torque.y = _tau_b[1];
+		wrench_msg.torque.z = _tau_b[2];
+
+		_wrench_pub.publish(wrench_msg);
+
 
 		for(int i = 0 ; i < 3 ; i++){
 			_eigen_tau_b(i) = _tau_b[i];	
@@ -533,8 +550,8 @@ void hierarchical_controller::ctrl_loop() {
 		phi_ref_dot_old = phi_ref_dot;
 		theta_ref_dot_old = theta_ref_dot;		
 
-
-	/*	cout<<"omega_b_b:"<<endl;
+/*
+		cout<<"omega_b_b:"<<endl;
 		for(int i = 0 ; i < 3 ; i++){
 			cout << _omega_b_b[i] << endl; 
 		}
@@ -546,7 +563,7 @@ void hierarchical_controller::ctrl_loop() {
 		for(int i = 0 ; i < 3 ; i++){
 			cout << _eta_b_dot[i] << endl; 
 		}
-	*/
+*/	
 
 		control_input[0] = _u_T;
 		control_input[1] = _tau_b[0];
@@ -571,8 +588,6 @@ void hierarchical_controller::ctrl_loop() {
 		}
 	
 		_act_pub.publish(act_msg);
-		uT_msg.data = _u_T;
-		_uT_pub.publish(uT_msg);
 
 		rate.sleep();		
 	}

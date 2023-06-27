@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   mav_msgs
   nav_msgs
   sensor_msgs
+  geometry_msgs
   tf
 )
 
@@ -165,8 +166,11 @@ target_link_libraries ( hierarchical_controller ${catkin_LIBRARIES}  )
 add_executable( reference_publisher src/reference_publisher.cpp)
 target_link_libraries ( reference_publisher ${catkin_LIBRARIES}  )
 
-add_executable( low_level_planner src/low_level_planner.cpp)
-target_link_libraries ( low_level_planner ${catkin_LIBRARIES}  )
+add_executable( low_level_planner_keyboard src/low_level_planner_keyboard.cpp)
+target_link_libraries ( low_level_planner_keyboard ${catkin_LIBRARIES}  )
+
+add_executable( low_level_planner_topic src/low_level_planner_topic.cpp)
+target_link_libraries ( low_level_planner_topic ${catkin_LIBRARIES}  )
 
 add_executable( artificial_potential_planner src/artificial_potential_planner.cpp)
 target_link_libraries ( artificial_potential_planner ${catkin_LIBRARIES}  )
