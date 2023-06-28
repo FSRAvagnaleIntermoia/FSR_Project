@@ -265,6 +265,7 @@ void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
 	
     _p_b = _R_enu2ned*pos_enu;		//trasformazione da enu a ned -> pb è in ned
 	_p_b_dot = _R_enu2ned*vel_enu;
+	_p_b_dot = _Rb.transpose()*_p_b_dot;
 
 	for(int i = 0 ; i < 3 ; i++){
 		_eigen_p_b_dot(i) = _eigen_p_b_dot[i];	
@@ -459,6 +460,22 @@ void hierarchical_controller::ctrl_loop() {
 	while(ros::ok){
 		e_p = _p_b - _pos_ref;
 		e_p_dot = _p_b_dot - _pos_ref_dot;
+
+		cout << "p_b:" << endl;
+		for(int i = 0 ; i < 3 ; i++){
+			cout << _p_b[i] << endl; 
+		}		
+		cout << endl;
+
+		cout << "p_b_dot:" << endl;
+		for(int i = 0 ; i < 3 ; i++){
+			cout << _p_b_dot[i] << endl; 
+		}		
+		cout << endl;
+
+
+
+
 		for(int i = 0 ; i < 3 ; i++){
 			e_p_int[i] = e_p_int[i] + e_p[i]*Ts;
 			e_eta_int[i] = e_eta_int[i] + e_eta[i]*Ts;

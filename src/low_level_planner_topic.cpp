@@ -93,7 +93,7 @@ low_level_planner::low_level_planner(){
 
 	_waypoint_sub = _nh.subscribe("/firefly/planner/waypoints", 0, &low_level_planner::waypoint_callback, this);	
 
-	_ttot = 10;
+	_ttot = 5;
 	_x0 = 0;
 	_y0 = 0;
 	_z0 = -1;

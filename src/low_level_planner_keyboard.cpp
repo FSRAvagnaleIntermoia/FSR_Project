@@ -83,7 +83,7 @@ low_level_planner::low_level_planner(){
 	_x0 = 0;
 	_y0 = 0;
 	_z0 = -1;
-	_psi0 = 0;
+	_psi0 = 1.57;
 
 }
 
