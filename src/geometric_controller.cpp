@@ -114,6 +114,7 @@ class geometric_controller {
 		double _Ki;
 //		double _Ki_e;
 
+
 		Eigen::Matrix3d _KW;
 		Eigen::Matrix3d _Ki_R;
 
@@ -174,12 +175,12 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 	_Ki_R << 0.1 , 0 , 0 , 0 , 0.1 , 0 ,0 , 0 , 0.1;
 */
 
-	_Kp = 10;
-	_Kv = 10;
-	_KR << 3 , 0 , 0 , 0 , 3 , 0 , 0 , 0 , 0.035;
-	_KW << 0.52 , 0 , 0 , 0 , 0.52 , 0 , 0 , 0 ,0.025;
-	_Ki = 0.2;
-	_Ki_R << 0.1 , 0 , 0 , 0 , 0.1 , 0 ,0 , 0 , 0.1;
+	_Kp = 5; //10
+	_Kv = 5;
+	_KR << 1 , 0 , 0 , 0 , 1 , 0 , 0 , 0 , 1;
+	_KW << 1 , 0 , 0 , 0 , 1 , 0 , 0 , 0 , 1; //0.52
+	_Ki = 0.2; //0.2
+	_Ki_R << 0.1, 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.1; //0.1
 
 
 	_Rb.setIdentity();
@@ -285,6 +286,8 @@ void geometric_controller::ctrl_loop() {
 	Eigen::Matrix3d Rb_d , Rb_d_old , Rb_d_dot;
 	Rb_d_old.setIdentity();
 	omega_b_b_ref_dot.setZero();
+	e_p_int.setZero();
+	e_int_R.setZero();
 
 	_u_T = 0;
 	Eigen::VectorXd angular_velocities_sq(motor_number);
@@ -307,7 +310,7 @@ void geometric_controller::ctrl_loop() {
 
 	while(ros::ok){
 
-		A = -_Kp*e_p - _Kv*e_p_dot - mass*gravity*e3 + mass*_pos_ref_dot_dot;
+		A = -_Kp*e_p -_Ki*e_p_int - _Kv*e_p_dot - mass*gravity*e3 + mass*_pos_ref_dot_dot;
 		z_bd = -A/A.norm();
 		x_bd(0) = cos(_psi_ref);
 		x_bd(1) = sin(_psi_ref);
@@ -339,16 +342,16 @@ void geometric_controller::ctrl_loop() {
 
 		e_W = _omega_b_b - _Rb.transpose()*Rb_d*omega_b_b_ref;
 
-
 		for(int i = 0 ; i < 3 ; i++){
 			e_p_int[i] = e_p_int[i] + e_p[i]*Ts;
 			e_int_R[i] = e_int_R[i] + e_R[i]*Ts;
 		}
 
-
-		_tau_b = -_KR*e_R - _KW*e_W + skew(_omega_b_b)*_Ib*_omega_b_b - _Ib*( skew(_omega_b_b)*_Rb.transpose()*Rb_d*omega_b_b_ref - _Rb.transpose()*Rb_d*omega_b_b_ref_dot );
+		_tau_b = -_KR*e_R -_Ki_R*e_int_R - _KW*e_W + skew(_omega_b_b)*_Ib*_omega_b_b - _Ib*( skew(_omega_b_b)*_Rb.transpose()*Rb_d*omega_b_b_ref - _Rb.transpose()*Rb_d*omega_b_b_ref_dot );
 
 		_u_T = -A.transpose()*_Rb*e3;
+
+
 
 		geometry_msgs::Wrench wrench_msg;
 		wrench_msg.force.x = 0;
