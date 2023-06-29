@@ -8,7 +8,7 @@
     <visual>
       <origin xyz="0 0 0.555"/>
       <geometry>
-        <cylinder length="0.777" radius="0.01"/>
+        <cylinder length="0.777" radius="0.011"/>
       </geometry>
     </visual>
   </link>

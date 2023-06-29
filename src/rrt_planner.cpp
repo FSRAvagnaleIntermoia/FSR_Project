@@ -35,6 +35,7 @@ class rrt_planner {
 		void run();
 		void spawnNode( Eigen::Vector3d point , int node_number , int type);
 		void spawnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number);
+		void spawnSolnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number);
 
 
 		Eigen::Vector3d attractive_force_calc();
@@ -235,6 +236,82 @@ void rrt_planner::spawnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_po
 }
 
 
+void rrt_planner::spawnSolnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number){
+    ros::NodeHandle nh;
+    ros::ServiceClient spawn_model_client = nh.serviceClient<gazebo_msgs::SpawnModel>("/gazebo/spawn_urdf_model");
+
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+
+	std::ifstream model_file(pkg_loc + "/urdf/soln_arrow.urdf");  
+    std::stringstream model_buffer;
+    model_buffer << model_file.rdbuf();
+    std::string model_xml = model_buffer.str();
+
+	start_point[1] = -start_point[1];
+	start_point[2] = -start_point[2];
+	end_point[1] = -end_point[1];
+	end_point[2] = -end_point[2];
+
+    // Calculate the length and orientation of the arrow
+    double length = std::sqrt(std::pow(end_point[0] - start_point[0], 2) +
+                              std::pow(end_point[1] - start_point[1], 2) +
+                              std::pow(end_point[2] - start_point[2], 2));
+    std::string length_placeholder = "0.777";  // Placeholder length in the URDF model
+    std::string length_string = "" + std::to_string(length) ;
+    size_t pos = model_xml.find(length_placeholder);
+    if (pos != std::string::npos){
+        model_xml.replace(pos, length_placeholder.length(), length_string);
+	}
+
+    length_placeholder = "0.555";  // Placeholder length in the URDF model
+    length_string = "" + std::to_string(length/2);
+    pos = model_xml.find(length_placeholder);
+    if (pos != std::string::npos){
+        model_xml.replace(pos, length_placeholder.length(), length_string);
+	}
+
+    // Prepare the SpawnModel service request
+    gazebo_msgs::SpawnModel spawn_model;
+    spawn_model.request.model_xml = model_xml;
+    spawn_model.request.model_name = "soln_arrow"  + std::to_string(arrow_number);
+    spawn_model.request.reference_frame = "world";
+    spawn_model.request.initial_pose.position.x = start_point[0];
+    spawn_model.request.initial_pose.position.y = start_point[1];
+    spawn_model.request.initial_pose.position.z = start_point[2];
+
+    // Calculate orientation based on start and end points
+
+	Eigen::Vector3d x(1,0,0);
+	Eigen::Vector3d z = end_point - start_point;
+	z.normalize();
+	Eigen::Vector3d y = skew(z)*x;
+	y.normalize();
+	Eigen::Matrix3d R;
+	R.block<3,1>(0,0) = skew(y)*z; 
+	R.block<3,1>(0,1) = y;
+	R.block<3,1>(0,2) = z;
+
+	Eigen::Quaterniond quat(R);
+
+    spawn_model.request.initial_pose.orientation.x = quat.x();
+    spawn_model.request.initial_pose.orientation.y = quat.y();
+    spawn_model.request.initial_pose.orientation.z = quat.z();
+    spawn_model.request.initial_pose.orientation.w = quat.w();
+
+
+
+    // Call the SpawnModel service
+    if (spawn_model_client.call(spawn_model))
+    {
+        ROS_INFO("Arrow spawned successfully!");
+    }
+    else
+    {
+        ROS_ERROR("Failed to spawn arrow.");
+    }
+}
+
+
 
 
 
@@ -288,8 +365,8 @@ void rrt_planner::rrt_planner_loop(){
 	std_msgs::Float64MultiArray waypoints_msg;
    	waypoints_msg.layout.dim.resize(1);	
 
-	srand (time(NULL));
-//	srand(2022);
+//	srand (time(NULL));
+	srand(2022);
 
 	double xmin, xmax, ymin, ymax, zmin, zmax;
 	xmin = 0;
@@ -400,10 +477,16 @@ void rrt_planner::rrt_planner_loop(){
 		do{
 			soln.conservativeResize(3,k+1);
 			soln.block<3,1>(0,k) = _roadmap.block<3,1>(0,parent);		
-			_roadmap.block<3,1>(0,parent) << 4,5,6;
 			parent = _roadmap(3,parent);
 			k++;
 		}while (parent != -1);
+
+
+
+
+		for (int i = 1 ; i < soln.cols()-1 ; i++){
+			spawnSolnArrow(  soln.block<3,1>(0,i) , soln.block<3,1>(0,i+1) , i);
+		}
 
 
 		waypoints_msg.layout.dim[0].size = soln.cols()-1; 
