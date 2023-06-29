@@ -98,6 +98,7 @@ class hierarchical_controller {
 		Eigen::Matrix3d _Q_dot;
 		Eigen::Matrix3d _Ib;
 		Eigen::Matrix3d _C;	
+		Eigen::Matrix3d _M;
 
 
 		Eigen::Matrix4Xd _allocation_matrix;
@@ -121,9 +122,13 @@ class hierarchical_controller {
 //		double _Ke_dot;
 		double _Ki;
 //		double _Ki_e;
+		double _sigma;
+		double _ni;
 
 		Eigen::Matrix3d _Ke_dot;
 		Eigen::Matrix3d _Ki_e;
+		Eigen::Matrix3d _D_o;
+		Eigen::Matrix3d _K_o;
 
 
 
@@ -180,6 +185,12 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_Ke_dot << 10 , 0 , 0 , 0 , 10 , 0 , 0 , 0 , 5;
 	_Ki = 0.2;
 	_Ki_e << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.05;
+
+	_sigma = 1;
+	_ni = 1;
+	_D_o.setIdentity();
+	_K_o = _sigma*_D_o;
+
 
 	_Q.setIdentity();
 	_Q_dot.setZero();
@@ -288,7 +299,8 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 	_eta_b_dot = _Q.inverse()*_omega_b_b;
 
 	_C = _Q.transpose()*skew(_Q*_eta_b_dot)*_Ib*_Q 	+ _Q.transpose()*_Ib*_Q_dot ;
-
+	_M = _Q.transpose()*_Ib*_Q;
+	
 	_first_imu = true;
 }
 
@@ -305,7 +317,6 @@ void hierarchical_controller::estimator_loop() {
 
 	Eigen::Vector3d q_lin;
 	Eigen::Vector3d q_ang;
-	Eigen::Matrix3d M;
 
 	Eigen::Vector3d q_dot_lin_est;
 	Eigen::Vector3d q_dot_ang_est;
@@ -324,8 +335,7 @@ void hierarchical_controller::estimator_loop() {
 
 		q_lin = mass*_p_b_dot;
 
-		M = _Q.transpose()*_Ib*_Q;
-		q_ang = M*_eta_b_dot;
+		q_ang = _M*_eta_b_dot;
 		
 		q_dot_lin_est = _est_dist_lin +  mass*gravity*e3 - _u_T*_Rb*e3;
 		q_dot_ang_est = _est_dist_ang + _C.transpose()*_eta_b_dot + _Q.transpose()*_tau_b;
@@ -344,8 +354,12 @@ void hierarchical_controller::ctrl_loop() {
 	ros::Rate rate(100);
 
 	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_eta, e_eta_dot, e_eta_int , mu_d , tau_tilde ;
+	Eigen::Vector3d eta_r_dot , eta_r_dot_dot , v_eta;
 	e_p_int.setZero();
 	e_eta_int.setZero();
+	eta_r_dot.setZero();
+	eta_r_dot_dot.setZero();
+	v_eta.setZero();
 	_u_T = 0;
 
 	Eigen::VectorXd angular_velocities_sq(motor_number);
@@ -370,6 +384,7 @@ void hierarchical_controller::ctrl_loop() {
 	_control_on = true;
 
 	double phi_ref , theta_ref , phi_ref_dot, theta_ref_dot , phi_ref_dot_dot , theta_ref_dot_dot , phi_ref_old = 0 , theta_ref_old = 0 , phi_ref_dot_old = 0 , theta_ref_dot_old = 0 ;
+	
 
 	float phi_ref_dot_dot_f = 0.0;
 	float theta_ref_dot_dot_f = 0.0;
@@ -438,13 +453,16 @@ void hierarchical_controller::ctrl_loop() {
 
 		e_eta = _eta_b - _eta_ref;
 		e_eta_dot = _eta_b_dot - _eta_ref_dot;
-		e_eta_int = e_eta_int + e_eta*Ts;
+		e_eta_int = e_eta_int + e_eta*Ts;	
 
-		tau_tilde =  -_Ke*e_eta - _Ke_dot*e_eta_dot - _Ki_e*e_eta_int + _eta_ref_dot_dot;
+		eta_r_dot = _eta_ref_dot - _sigma*e_eta;
+		eta_r_dot_dot = _eta_ref_dot_dot - _ni*e_eta_dot;
+		v_eta = e_eta_dot + _sigma*e_eta;
+
 
 		Eigen::Vector3d _tau_b_real;
-		_tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot -(_Q.transpose()).inverse()*_est_dist_ang;
-		_tau_b_real = _tau_b + Eigen::Vector3d(0.05,0.1,0.2);	//disturbo
+		_tau_b = (_Q.transpose()).inverse()*(_M*eta_r_dot_dot + _C*eta_r_dot -_est_dist_ang -_D_o*v_eta - _K_o*e_eta  );
+		_tau_b_real = _tau_b + Eigen::Vector3d(0.0,0.0,0.0);	//disturbo
 
 		geometry_msgs::Wrench wrench_msg;
 		wrench_msg.force.x = 0;

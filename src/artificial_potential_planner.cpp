@@ -250,6 +250,7 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 		std::cin >> _goal_pos[1];
 		std::cout << "Insert z reference" << endl;
 		std::cin >> _goal_pos[2];
+		p = _pos;
 		finish = false;
 		while ( !finish ){
 			attractive_force = attractive_force_calc();

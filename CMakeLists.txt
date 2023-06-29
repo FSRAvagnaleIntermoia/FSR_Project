@@ -166,6 +166,10 @@ target_link_libraries ( hierarchical_controller ${catkin_LIBRARIES}  )
 add_executable( geometric_controller src/geometric_controller.cpp)
 target_link_libraries ( geometric_controller ${catkin_LIBRARIES}  )
 
+
+add_executable( passivity_based_controller src/passivity_based_controller.cpp)
+target_link_libraries ( passivity_based_controller ${catkin_LIBRARIES}  )
+
 add_executable( low_level_planner_keyboard src/low_level_planner_keyboard.cpp)
 target_link_libraries ( low_level_planner_keyboard ${catkin_LIBRARIES}  )
 
