@@ -295,7 +295,7 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 void hierarchical_controller::estimator_loop() {	
 //G=k0^2/(k0+s)^2; transfer function for the estimator
 	ros::Rate rate(100);
-	double c0 = 10;
+	double c0 = 1;
 	double k0 = c0;
 //	double k2 = 2*k0;
 //	double k1 = k0/2; 
@@ -350,6 +350,7 @@ void hierarchical_controller::ctrl_loop() {
 
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 	Eigen::VectorXd control_input(4);
+	control_input.setZero();
     mav_msgs::Actuators act_msg;
     act_msg.angular_velocities.resize(motor_number);
 

@@ -69,7 +69,7 @@ class artificial_potential_planner {
 
 		obstacle obstacle_array[obstacle_array_size];
 
-		int rate;
+		int _rate;
 
 
 		double _Ka , _Kb , _Kd , _K_obs , _eta_obs_i;
@@ -83,10 +83,10 @@ artificial_potential_planner::artificial_potential_planner(){
 	_goal_pos[1] = -7;
 	_goal_pos[2] = -2;
 
-	_Kb = 0.5;
+	_Kb = 0.4;
 	_Ka = _Kb*2;
 	_Kd = 1;
-	_K_obs = 0.05;
+	_K_obs = 0.04;
 //	_eta_obs_i = 1.5;
 
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &artificial_potential_planner::odom_callback, this);	
@@ -160,11 +160,11 @@ Eigen::Vector3d artificial_potential_planner::attractive_force_calc(){
 	e = _goal_pos - _pos;
 	if (e.norm() < 1){
 		f_attr = _Ka*e; // -_Kd*_vel;
-		rate = 20;		
+		_rate = 100;		
 	}
 	else{
 		f_attr = _Kb*e/e.norm();
-		rate = 20;
+		_rate = 100;
 	}
 
 
@@ -229,14 +229,15 @@ void artificial_potential_planner::stop_drone(){
 
 void artificial_potential_planner::artificial_potential_planner_loop(){
 
-	Eigen::Vector3d p , p_dot , p_dot_dot;// , p_dot_dot_f;
-	Eigen::Vector3d p_dot_old; //, p_dot_dot_old_f;
+	Eigen::Vector3d p , p_dot , p_dot_dot , p_dot_dot_f;
+	Eigen::Vector3d p_dot_old, p_dot_dot_old , p_dot_dot_old_f;
 	p.setZero();
 	p(2) = -1;
 	p_dot.setZero();
 	p_dot_dot.setZero();
 	p_dot_old.setZero();
-//	p_dot_dot_old_f.setZero();
+	p_dot_dot_old.setZero();
+	p_dot_dot_old_f.setZero();
 	std_msgs::Float64 msg;
 
 	Eigen::Vector3d attractive_force , total_repulsive_force;
@@ -264,17 +265,15 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 
 
 			
-			p = p + p_dot/rate;		
+			p = p + p_dot/_rate;		
 
-			p_dot_dot = (p_dot - p_dot_old)*rate;
+			p_dot_dot = (p_dot - p_dot_old)*_rate;
+			p_dot_dot_f = 0.9048*p_dot_dot_old_f + p_dot_dot_old*0.009516;  	//frequenza di taglio a 10 hz
+			p_dot_dot_old_f = p_dot_dot_f;
+			p_dot_dot_old = p_dot_dot;	
+			p_dot_old = p_dot;	
 
 
-	//		p_dot_dot_f = 0.99*p_dot_dot_old_f + p_dot_dot*0.00995;  	//frequenza di taglio a 2 PI
-	//		p_dot_dot_old_f = p_dot_dot_f;
-
-
-	//		p_dot = p_dot + p_dot_dot/rate;
-	//		p = p + p_dot/rate; 
 
 
 			msg.data = p(0);
@@ -291,16 +290,15 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 			msg.data = p_dot(2);
 			_z_dot_pub.publish(msg);
 			
-			msg.data = p_dot_dot(0);
+			msg.data = p_dot_dot_f(0);
 			_x_dot_dot_pub.publish(msg);
-			msg.data = p_dot_dot(1);
+			msg.data = p_dot_dot_f(1);
 			_y_dot_dot_pub.publish(msg);
-			msg.data = p_dot_dot(2);
+			msg.data = p_dot_dot_f(2);
 			_z_dot_dot_pub.publish(msg);
 
 	//		cout << p_dot_dot << endl << endl;
 	//		cout << "p:" << p << endl << endl;
-			p_dot_old = p_dot;
 
 			if ( (abs((_goal_pos[0]-_pos[0])) < 0.01) && (abs((_goal_pos[1]-_pos[1]))< 0.01) && (abs((_goal_pos[2]-_pos[2])) < 0.01)){
 				stop_drone();
@@ -308,7 +306,7 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 			}
 
 
-			usleep(1000000/rate);
+			usleep(1000000/_rate);
 		}
 	}
 }

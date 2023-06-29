@@ -167,27 +167,14 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
  	_R_enu2ned << 1,0,0,0,-1,0,0,0,-1; 
 	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
 
-	_Kp = 10;
-	_Kv = 10;
-	_KR << 1 , 0 , 0 , 0 , 1 , 0 , 0 , 0 , 2;
-	_KW << 1 , 0 , 0 , 0 , 1 , 0 , 0 , 0 , 2;
+	_Kp = 5;
+	_Kv = 5;
+	_KR << 3 , 0 , 0 , 0 , 3 , 0 , 0 , 0 , 0.03;
+	_KW << 0.5 , 0 , 0 , 0 , 0.5 , 0 , 0 , 0 , 0.05;
 	_Ki = 0.1;
 	_Ki_R << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.1;
 
-//	_KR = _KR*_Ib.inverse();
-//	_KW = _KW*_Ib.inverse();
-
-
-/*	_Kp = 20; //10
-	_Kv = 20;
-	_KR << 1 , 0 , 0 , 0 , 1 , 0 , 0 , 0 , 1;
-	_KW << 0.5 , 0 , 0 , 0 , 0.5 , 0 , 0 , 0 , 0.5; //0.52
-	_Ki = 0.2; //0.2
-	_Ki_R << 0.1, 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.1; //0.1
-*/
-
-//	_Rb.setIdentity();
-	_Rb = Eigen::AngleAxisd(M_PI/2, Eigen::Vector3d::UnitZ());
+	_Rb.setIdentity();
 	cout << _Rb << endl;
 }
 
@@ -253,28 +240,18 @@ void geometric_controller::psi_dot_dot_ref_callback( std_msgs::Float64 msg){
 
 void geometric_controller::odom_callback( nav_msgs::Odometry odom ) {
 
-    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
-    Eigen::Vector3d vel_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z); 
+    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world ENU frame
+    Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body ENU frame
 	
-    _p_b = _R_enu2ned*pos_enu;		//trasformazione da enu a ned -> pb è in ned
-	_p_b_dot = _R_enu2ned*vel_enu;
-//	_p_b_dot = _Rb.transpose()*_p_b_dot;
-	_p_b_dot = _Rb*_p_b_dot;
-
+    _p_b = _R_enu2ned*pos_enu;							//transform in world NED frame
+	_p_b_dot = _Rb*_R_enu2ned*vel_b_enu;  				//transform in world NED frame (first in body NED then in world NED)	
 
 	_first_odom = true;
 }
 
 void geometric_controller::imu_callback ( sensor_msgs::Imu imu ){
-	Eigen::Vector3d omega_wenu_b(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z); //in realtà è omega_b_b in ENU
-	Eigen::Vector3d omega_wned_b = _R_enu2ned.transpose()*omega_wenu_b;
-
-
-
-
-//	_omega_b_b = _Rb.transpose()*omega_wned_b;				//NED
-	_omega_b_b = omega_wned_b;				//NED
-
+	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body ENU frame
+	 _omega_b_b = _R_enu2ned.transpose()*omega_b_b_enu;								     	//transform in NED body frane
 	
 	Eigen::Quaterniond quat(imu.orientation.w,imu.orientation.x,imu.orientation.y,imu.orientation.z);
 	Eigen::Matrix3d R = quat.toRotationMatrix();
@@ -298,6 +275,8 @@ void geometric_controller::ctrl_loop() {
 	_u_T = 0;
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 	Eigen::VectorXd control_input(4);
+	control_input.setZero();
+
     mav_msgs::Actuators act_msg;
     act_msg.angular_velocities.resize(motor_number);
 
@@ -327,19 +306,21 @@ void geometric_controller::ctrl_loop() {
 
 	while(ros::ok){
 
-/*		cout<<"pos_ref:"<<endl;
-		for(int i = 0 ; i < 3 ; i++){
-			cout << _pos_ref[i] << endl; 
-		}
-		cout <<  "psi ref: " << _psi_ref << endl << endl;		
-*/
-
+		cout << "p_b:" << _p_b << endl << endl;
+		cout << "p_b_dot:" << _p_b_dot << endl << endl;
+		cout << "pos_ref:" << _pos_ref << endl << endl;
+		cout << "e_p: " << endl << e_p << endl << endl;		
+		cout << "Rb_d: " << endl << Rb_d << endl << endl;
+		cout << "Rb: " << endl << _Rb << endl << endl;
+		cout << "e_R: " << e_R << endl << endl;
+		cout << "e_W: " << e_W << endl << endl;		
+		cout << "omega_b_b:" << _omega_b_b << endl << endl;
+		cout << "control input: " << endl << control_input << endl << endl;
 						
 		e_p = _p_b - _pos_ref;
 		e_p_dot = _p_b_dot - _pos_ref_dot;
 		e_p_int = e_p_int + e_p*Ts;
 		A = -_Kp*e_p -_Ki*e_p_int - _Kv*e_p_dot - mass*gravity*e3 + mass*_pos_ref_dot_dot;
-		cout << "A: " << A << endl << endl;
 
 		z_bd = -A/A.norm();
 		x_bd(0) = cos(_psi_ref);
@@ -351,22 +332,9 @@ void geometric_controller::ctrl_loop() {
 		Rb_d.block<3,1>(0,1) = y_bd;
 		Rb_d.block<3,1>(0,2) = z_bd;
 
-/*		cout << "Rb_d: " << endl;
-		cout << Rb_d << endl << endl;	
-		cout << "Rb: " << endl;
-		cout << _Rb << endl << endl;	
-*/
-
-//		Rb_d_dot = (Rb_d - Rb_d_old)*100;
-//		Rb_d_old = Rb_d;
-//		omega_b_b_ref_dot = (omega_b_b_ref - omega_b_b_ref_old)*100;
-//		omega_b_b_ref_old = omega_b_b_ref;
-
-
 
 		e_R = 0.5*v_operator(Rb_d.transpose()*_Rb - _Rb.transpose()*Rb_d);
-		
-		
+				
 		Rb_d_dot = (Rb_d - Rb_d_old)/Ts;
 		Rb_d_dot_f = 0.9048*Rb_d_dot_old_f + Rb_d_dot_old*0.009516;  	//frequenza di taglio a 10 hz
 		Rb_d_dot_old_f = Rb_d_dot_f;
@@ -374,6 +342,7 @@ void geometric_controller::ctrl_loop() {
 		Rb_d_old = Rb_d;
 
 		omega_b_b_ref = v_operator(Rb_d.transpose()*Rb_d_dot_f);
+	//	omega_b_b_ref = v_operator(Rb_d.transpose()*Rb_d_dot);
 
 		omega_b_b_ref_dot = (omega_b_b_ref - omega_b_b_ref_old)/Ts;
 		omega_b_b_ref_dot_f = 0.9048*omega_b_b_ref_dot_old_f + omega_b_b_ref_dot_old*0.009516;  	//frequenza di taglio a 10 hz
@@ -382,18 +351,17 @@ void geometric_controller::ctrl_loop() {
 		omega_b_b_ref_old = omega_b_b_ref;
 
 
-
 		e_W = _omega_b_b - _Rb.transpose()*Rb_d*omega_b_b_ref;
 
 
 
-		cout << "e_R: " << e_R << endl << endl;
-		cout << "e_W: " << e_W << endl << endl;
 
 
 
 
 		_tau_b = -_KR*e_R -_Ki_R*e_int_R - _KW*e_W + skew(_omega_b_b)*_Ib*_omega_b_b -_Ib*( skew(_omega_b_b)*_Rb.transpose()*Rb_d*omega_b_b_ref - _Rb.transpose()*Rb_d*omega_b_b_ref_dot_f );
+	//	_tau_b = -_KR*e_R -_Ki_R*e_int_R - _KW*e_W + skew(_omega_b_b)*_Ib*_omega_b_b -_Ib*( skew(_omega_b_b)*_Rb.transpose()*Rb_d*omega_b_b_ref - _Rb.transpose()*Rb_d*omega_b_b_ref_dot );
+
 
 		_u_T = -A.transpose()*_Rb*e3;
 
@@ -409,28 +377,22 @@ void geometric_controller::ctrl_loop() {
 
 		_wrench_pub.publish(wrench_msg);
 
-
 		control_input[0] = _u_T;
 		control_input[1] = _tau_b[0];
 		control_input[2] = _tau_b[1];
 		control_input[3] = _tau_b[2];
 	
-		cout << "control input: " << endl;
-		for (int i=0 ; i<4 ; i++){
-			std::cout <<control_input[i] << endl;
-	//		std::cout <<e_p[i] << endl;
-		}
-		std::cout <<endl;
-	
-
 		angular_velocities_sq =  _allocation_matrix.transpose()*(_allocation_matrix*_allocation_matrix.transpose()).inverse() * control_input;
 
 		for (int i=0 ; i<motor_number ; i++){
-	//		std::cout << angular_velocities_sq(i) << endl;
-			if (angular_velocities_sq(i) >= 0) 
-		    act_msg.angular_velocities[i] = sqrt(angular_velocities_sq(i));	
-			if (angular_velocities_sq(i) < 0) 
-		    act_msg.angular_velocities[i] = -sqrt(-angular_velocities_sq(i));	
+		//	std::cout << angular_velocities_sq(i) << endl;
+			if (angular_velocities_sq(i) >= 0) {
+		    	act_msg.angular_velocities[i] = sqrt(angular_velocities_sq(i));	
+			}
+			if (angular_velocities_sq(i) < 0) {
+				cout << "negative motor velocity!" << endl;
+		    	act_msg.angular_velocities[i] = 0;
+			}
 		}
 	
 		_act_pub.publish(act_msg);
