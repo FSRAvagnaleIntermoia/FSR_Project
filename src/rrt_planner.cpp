@@ -365,8 +365,8 @@ void rrt_planner::rrt_planner_loop(){
 	std_msgs::Float64MultiArray waypoints_msg;
    	waypoints_msg.layout.dim.resize(1);	
 
-//	srand (time(NULL));
-	srand(2022);
+	srand (time(NULL));
+//	srand(2022);
 
 	double xmin, xmax, ymin, ymax, zmin, zmax;
 	xmin = 0;
@@ -398,7 +398,7 @@ void rrt_planner::rrt_planner_loop(){
 				q_rand << rx,ry,rz ;
 		//		std::cout << "q_rand: " << q_rand << endl;
 
-				min_dist = 10000;
+				min_dist = 1000000;
 				min_index = -1;
 				for(int j = 0 ; j <_roadmap.cols() ; j++){
 					dist = ( _roadmap.block<3,1>(0,j)  - q_rand ).norm();
@@ -416,18 +416,17 @@ void rrt_planner::rrt_planner_loop(){
 					_roadmap.block<3,1>(0,_roadmap.cols()-1) = q_new;
 					_roadmap(3,_roadmap.cols()-1) = min_index;
 				}
-	//			usleep(1000000);
 		//		std::cout << "q_near: " << q_near << endl;
 		//		std::cout << "q_new: " << q_new << endl<<endl;
 			}
 
-			min_dist = 10000;
+			min_dist = 1000000;
 			min_index = -1;
 			for(int j = 0 ; j <_roadmap.cols() ; j++){
 				dist = ( _roadmap.block<3,1>(0,j)  - _goal_pos ).norm();
 				std::cout << "waypoint number: "<< j << " dist: " << dist << endl;
 				if (dist < min_dist){
-					dist = min_dist;
+					min_dist = dist;
 					min_index = j;
 				}
 			}
@@ -454,7 +453,7 @@ void rrt_planner::rrt_planner_loop(){
 		for (int i = 1 ; i < _roadmap.cols() ; i++){
 			node = _roadmap.block<4,1>(0,i);
 			parent_id = _roadmap(3,i);	
-			if (parent_id != min_index){
+			if ( i != _roadmap.cols()-1 ){
 				spawnNode( node.block<3,1>(0,0), i , 0);		//does not spawn goal
 			}
 			if (parent_id != -1){
@@ -484,7 +483,7 @@ void rrt_planner::rrt_planner_loop(){
 
 
 
-		for (int i = 1 ; i < soln.cols()-1 ; i++){
+		for (int i = 0 ; i < soln.cols()-1 ; i++){
 			spawnSolnArrow(  soln.block<3,1>(0,i) , soln.block<3,1>(0,i+1) , i);
 		}
 

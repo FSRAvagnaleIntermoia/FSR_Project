@@ -13,7 +13,7 @@
     </visual>
   </link>
   <gazebo reference="soln_arrow_link">
-    <material>Gazebo/Yellow</material>
+    <material>Gazebo/Green</material>
     <static>true</static>
     <turnGravityOff>true</turnGravityOff>      
   </gazebo>
