@@ -6,6 +6,8 @@
 #include "std_msgs/Float64.h"
 #include "std_msgs/Float64MultiArray.h"
 #include "geometry_msgs/Wrench.h"
+#include <fstream>
+#include "ros/package.h"
 
 
 //Include tf libraries							
@@ -53,8 +55,8 @@ class hierarchical_controller {
 		void psi_dot_dot_ref_callback( std_msgs::Float64 msg);
 
 
-
-
+		void empty_txt();
+		void print();
 
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
@@ -192,6 +194,19 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_Q.setIdentity();
 	_Q_dot.setZero();
 	_Rb.setIdentity();
+
+	empty_txt();
+
+}
+
+void hierarchical_controller::empty_txt(){
+
+    // "svuota" i file di testo
+
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+    ofstream file_pos_x(pkg_loc + "/pos_x.txt");
+    file_pos_x << "";
+    file_pos_x.close();
 }
 
 
@@ -349,6 +364,7 @@ void hierarchical_controller::estimator_loop() {
 }
 void hierarchical_controller::ctrl_loop() {	
 	ros::Rate rate(100);
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 
 	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_eta, e_eta_dot, e_eta_int , mu_d , tau_tilde ;
 	e_p_int.setZero();
@@ -484,6 +500,12 @@ void hierarchical_controller::ctrl_loop() {
 		    	act_msg.angular_velocities[i] = 0;
 			}
 		}
+
+
+
+        ofstream file_x(pkg_loc + "/pos_x.txt",std::ios_base::app);
+        file_x << _p_b(0) <<endl;
+        file_x.close();
 	
 		_act_pub.publish(act_msg);
 
