@@ -96,6 +96,14 @@
    respawn="false" output="screen">
   </node>  
 
+  <node name="spawn_start" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/start.urdf -urdf 
+         -x 0.0
+         -y 0.0
+         -z 1.0
+         -model start"
+   respawn="false" output="screen">
+  </node>    
 
 
 </launch>

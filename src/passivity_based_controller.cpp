@@ -16,7 +16,7 @@
 using namespace std;
 
 const double gravity = 9.8;
-const double mass = 1.56779;
+const double uncertainty = 1.2;
 const double Ixx = 0.0347563;
 const double Iyy = 0.0458929;
 const double Izz = 0.0977;
@@ -29,9 +29,9 @@ const double Ts = 0.01;
 
 
 
-class hierarchical_controller {
+class passivity_based_controller {
 	public:
-		hierarchical_controller();			
+		passivity_based_controller();			
 		void ctrl_loop();
 		void estimator_loop();
         void run();
@@ -113,6 +113,10 @@ class hierarchical_controller {
 		Eigen::Vector3d _est_dist_lin;
 		Eigen::Vector3d _est_dist_ang;
 
+
+		double _mass;
+
+
 //		tf::Matrix3x3 _Kp;
 //		tf::Matrix3x3 _Ke;
 		Eigen::Matrix3d _Ke;
@@ -142,23 +146,23 @@ class hierarchical_controller {
 
 
 
-hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref(0,0,0) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0){
+passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _eta_ref(0,0,0) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0){
 
-	_x_sub = _nh.subscribe("/firefly/planner/x_ref", 0, &hierarchical_controller::x_ref_callback, this);	
-	_y_sub = _nh.subscribe("/firefly/planner/y_ref", 0, &hierarchical_controller::y_ref_callback, this);	
-	_z_sub = _nh.subscribe("/firefly/planner/z_ref", 0, &hierarchical_controller::z_ref_callback, this);	
-	_psi_sub = _nh.subscribe("/firefly/planner/psi_ref", 0, &hierarchical_controller::psi_ref_callback, this);	
-	_x_dot_sub = _nh.subscribe("/firefly/planner/x_dot_ref", 0, &hierarchical_controller::x_dot_ref_callback, this);	
-	_y_dot_sub = _nh.subscribe("/firefly/planner/y_dot_ref", 0, &hierarchical_controller::y_dot_ref_callback, this);	
-	_z_dot_sub = _nh.subscribe("/firefly/planner/z_dot_ref", 0, &hierarchical_controller::z_dot_ref_callback, this);	
-	_psi_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_ref", 0, &hierarchical_controller::psi_dot_ref_callback, this);	
-	_x_dot_dot_sub = _nh.subscribe("/firefly/planner/x_dot_dot_ref", 0, &hierarchical_controller::x_dot_dot_ref_callback, this);	
-	_y_dot_dot_sub = _nh.subscribe("/firefly/planner/y_dot_dot_ref", 0, &hierarchical_controller::y_dot_dot_ref_callback, this);	
-	_z_dot_dot_sub = _nh.subscribe("/firefly/planner/z_dot_dot_ref", 0, &hierarchical_controller::z_dot_dot_ref_callback, this);	
-	_psi_dot_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_dot_ref", 0, &hierarchical_controller::psi_dot_dot_ref_callback, this);	
+	_x_sub = _nh.subscribe("/firefly/planner/x_ref", 0, &passivity_based_controller::x_ref_callback, this);	
+	_y_sub = _nh.subscribe("/firefly/planner/y_ref", 0, &passivity_based_controller::y_ref_callback, this);	
+	_z_sub = _nh.subscribe("/firefly/planner/z_ref", 0, &passivity_based_controller::z_ref_callback, this);	
+	_psi_sub = _nh.subscribe("/firefly/planner/psi_ref", 0, &passivity_based_controller::psi_ref_callback, this);	
+	_x_dot_sub = _nh.subscribe("/firefly/planner/x_dot_ref", 0, &passivity_based_controller::x_dot_ref_callback, this);	
+	_y_dot_sub = _nh.subscribe("/firefly/planner/y_dot_ref", 0, &passivity_based_controller::y_dot_ref_callback, this);	
+	_z_dot_sub = _nh.subscribe("/firefly/planner/z_dot_ref", 0, &passivity_based_controller::z_dot_ref_callback, this);	
+	_psi_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_ref", 0, &passivity_based_controller::psi_dot_ref_callback, this);	
+	_x_dot_dot_sub = _nh.subscribe("/firefly/planner/x_dot_dot_ref", 0, &passivity_based_controller::x_dot_dot_ref_callback, this);	
+	_y_dot_dot_sub = _nh.subscribe("/firefly/planner/y_dot_dot_ref", 0, &passivity_based_controller::y_dot_dot_ref_callback, this);	
+	_z_dot_dot_sub = _nh.subscribe("/firefly/planner/z_dot_dot_ref", 0, &passivity_based_controller::z_dot_dot_ref_callback, this);	
+	_psi_dot_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_dot_ref", 0, &passivity_based_controller::psi_dot_dot_ref_callback, this);	
 
-	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &hierarchical_controller::odom_callback, this);	
-	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &hierarchical_controller::imu_callback, this);	
+	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &passivity_based_controller::odom_callback, this);	
+	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &passivity_based_controller::imu_callback, this);	
 
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
 	_wrench_pub = _nh.advertise<geometry_msgs::Wrench>("/firefly/command/wrench", 1);
@@ -176,8 +180,11 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_control_on = false;
 
  	_R_enu2ned << 1,0,0,0,-1,0,0,0,-1; 
-	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
 
+	_mass = 1.56779;
+	_mass = _mass * uncertainty;
+	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
+	_Ib = _Ib * uncertainty;
 
 	_Kp = 2;
 	_Kp_dot = 1;
@@ -207,52 +214,52 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 }
 
 
-void hierarchical_controller::x_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::x_ref_callback( std_msgs::Float64 msg){
 	_pos_ref[0] = msg.data;
 }
-void hierarchical_controller::y_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::y_ref_callback( std_msgs::Float64 msg){
 	_pos_ref[1] = msg.data;
 }
-void hierarchical_controller::z_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::z_ref_callback( std_msgs::Float64 msg){
 	_pos_ref[2] = msg.data;
 }
-void hierarchical_controller::psi_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::psi_ref_callback( std_msgs::Float64 msg){
 	_eta_ref[2] = msg.data;
 }
 
 
 
-void hierarchical_controller::x_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::x_dot_ref_callback( std_msgs::Float64 msg){
 	_pos_ref_dot[0] = msg.data;
 }
-void hierarchical_controller::y_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::y_dot_ref_callback( std_msgs::Float64 msg){
 	_pos_ref_dot[1] = msg.data;
 }
-void hierarchical_controller::z_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::z_dot_ref_callback( std_msgs::Float64 msg){
 	_pos_ref_dot[2] = msg.data;
 }
-void hierarchical_controller::psi_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::psi_dot_ref_callback( std_msgs::Float64 msg){
 	_eta_ref_dot[2] = msg.data;
 }
 
 
-void hierarchical_controller::x_dot_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::x_dot_dot_ref_callback( std_msgs::Float64 msg){
 	_pos_ref_dot_dot[0] = msg.data;
 }
-void hierarchical_controller::y_dot_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::y_dot_dot_ref_callback( std_msgs::Float64 msg){
 	_pos_ref_dot_dot[1] = msg.data;
 }
-void hierarchical_controller::z_dot_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::z_dot_dot_ref_callback( std_msgs::Float64 msg){
 	_pos_ref_dot_dot[2] = msg.data;
 }
-void hierarchical_controller::psi_dot_dot_ref_callback( std_msgs::Float64 msg){
+void passivity_based_controller::psi_dot_dot_ref_callback( std_msgs::Float64 msg){
 	_eta_ref_dot_dot[2] = msg.data;
 }
 
 
 
 
-void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
+void passivity_based_controller::odom_callback( nav_msgs::Odometry odom ) {
 
     Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world ENU frame
     Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body ENU frame
@@ -263,7 +270,7 @@ void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
 	_first_odom = true;
 }
 
-void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
+void passivity_based_controller::imu_callback ( sensor_msgs::Imu imu ){
 	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body ENU frame
 	 _omega_b_b = _R_enu2ned.transpose()*omega_b_b_enu;								     	//transform in NED body frane
 
@@ -304,7 +311,7 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 	_first_imu = true;
 }
 
-void hierarchical_controller::estimator_loop() {	
+void passivity_based_controller::estimator_loop() {	
 //G=k0^2/(k0+s)^2; transfer function for the estimator
 	ros::Rate rate(100);
 	double c0 = 1;
@@ -333,11 +340,11 @@ void hierarchical_controller::estimator_loop() {
 	while(! _control_on) rate.sleep();
 	while(ros::ok){
 
-		q_lin = mass*_p_b_dot;
+		q_lin = _mass*_p_b_dot;
 
 		q_ang = _M*_eta_b_dot;
 		
-		q_dot_lin_est = _est_dist_lin +  mass*gravity*e3 - _u_T*_Rb*e3;
+		q_dot_lin_est = _est_dist_lin + _mass*gravity*e3 - _u_T*_Rb*e3;
 		q_dot_ang_est = _est_dist_ang + _C.transpose()*_eta_b_dot + _Q.transpose()*_tau_b;
 		
 		q_lin_est = q_lin_est + q_dot_lin_est/100;
@@ -350,7 +357,7 @@ void hierarchical_controller::estimator_loop() {
 	}
 
 }
-void hierarchical_controller::ctrl_loop() {	
+void passivity_based_controller::ctrl_loop() {	
 	ros::Rate rate(100);
 
 	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_eta, e_eta_dot, e_eta_int , mu_d , tau_tilde ;
@@ -415,12 +422,12 @@ void hierarchical_controller::ctrl_loop() {
 		e_p_int = e_p_int + e_p*Ts;
 		
 
-		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot -  _est_dist_lin/mass;
-		_u_T = mass*sqrt(mu_d(0)*mu_d(0) + mu_d(1)*mu_d(1) + (mu_d(2)-gravity)*(mu_d(2)-gravity));
+		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot -  _est_dist_lin/_mass;
+		_u_T = _mass*sqrt(mu_d(0)*mu_d(0) + mu_d(1)*mu_d(1) + (mu_d(2)-gravity)*(mu_d(2)-gravity));
 
 
 
-		phi_ref = asin( mass/_u_T*( mu_d(1)*cos(_eta_ref(2)) - mu_d(0)*sin(_eta_ref(2)) ) );
+		phi_ref = asin( _mass/_u_T*( mu_d(1)*cos(_eta_ref(2)) - mu_d(0)*sin(_eta_ref(2)) ) );
 		phi_ref_dot = (phi_ref-phi_ref_old)/Ts;  // Ts=0.01
 		phi_ref_dot_dot = (phi_ref_dot-phi_ref_dot_old)/Ts;  // Ts=0.01
 
@@ -502,17 +509,17 @@ void hierarchical_controller::ctrl_loop() {
 	}
 }
 
-void hierarchical_controller::run() {
-	boost::thread ctrl_loop_t ( &hierarchical_controller::ctrl_loop, this);
-	boost::thread estimator_loop_t ( &hierarchical_controller::estimator_loop, this);
+void passivity_based_controller::run() {
+	boost::thread ctrl_loop_t ( &passivity_based_controller::ctrl_loop, this);
+	boost::thread estimator_loop_t ( &passivity_based_controller::estimator_loop, this);
 	ros::spin();	
 }
 
 
 
 int main(int argc, char** argv) {
-	ros::init(argc, argv, "hierarchical_controller");
-	hierarchical_controller hc;
-	hc.run();
+	ros::init(argc, argv, "passivity_based_controller");
+	passivity_based_controller pbc;
+	pbc.run();
 	return 0;
 }

@@ -16,7 +16,7 @@
 using namespace std;
 
 const double gravity = 9.8;
-const double mass = 1.56779;
+const double uncertainty = 1;
 const double Ixx = 0.0347563;
 const double Iyy = 0.0458929;
 const double Izz = 0.0977;
@@ -98,6 +98,8 @@ class hierarchical_controller {
 		Eigen::Matrix3d _Q_dot;
 		Eigen::Matrix3d _Ib;
 		Eigen::Matrix3d _C;	
+		Eigen::Matrix3d _M;
+
 
 
 		Eigen::Matrix4Xd _allocation_matrix;
@@ -111,6 +113,8 @@ class hierarchical_controller {
 
 		Eigen::Vector3d _est_dist_lin;
 		Eigen::Vector3d _est_dist_ang;
+
+		double _mass;
 
 //		tf::Matrix3x3 _Kp;
 //		tf::Matrix3x3 _Ke;
@@ -171,7 +175,11 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_control_on = false;
 
  	_R_enu2ned << 1,0,0,0,-1,0,0,0,-1; 
+
+	_mass = 1.56779;
+	_mass = _mass * uncertainty;
 	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
+	_Ib = _Ib * uncertainty;
 
 
 	_Kp = 2;
@@ -288,6 +296,7 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 	_eta_b_dot = _Q.inverse()*_omega_b_b;
 
 	_C = _Q.transpose()*skew(_Q*_eta_b_dot)*_Ib*_Q 	+ _Q.transpose()*_Ib*_Q_dot ;
+	_M = _Q.transpose()*_Ib*_Q;
 
 	_first_imu = true;
 }
@@ -305,7 +314,6 @@ void hierarchical_controller::estimator_loop() {
 
 	Eigen::Vector3d q_lin;
 	Eigen::Vector3d q_ang;
-	Eigen::Matrix3d M;
 
 	Eigen::Vector3d q_dot_lin_est;
 	Eigen::Vector3d q_dot_ang_est;
@@ -322,12 +330,11 @@ void hierarchical_controller::estimator_loop() {
 	while(! _control_on) rate.sleep();
 	while(ros::ok){
 
-		q_lin = mass*_p_b_dot;
+		q_lin = _mass*_p_b_dot;
 
-		M = _Q.transpose()*_Ib*_Q;
-		q_ang = M*_eta_b_dot;
+		q_ang = _M*_eta_b_dot;
 		
-		q_dot_lin_est = _est_dist_lin +  mass*gravity*e3 - _u_T*_Rb*e3;
+		q_dot_lin_est = _est_dist_lin + _mass*gravity*e3 - _u_T*_Rb*e3;
 		q_dot_ang_est = _est_dist_ang + _C.transpose()*_eta_b_dot + _Q.transpose()*_tau_b;
 		
 		q_lin_est = q_lin_est + q_dot_lin_est/100;
@@ -400,12 +407,12 @@ void hierarchical_controller::ctrl_loop() {
 		e_p_int = e_p_int + e_p*Ts;
 		
 
-		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot -  _est_dist_lin/mass;
-		_u_T = mass*sqrt(mu_d(0)*mu_d(0) + mu_d(1)*mu_d(1) + (mu_d(2)-gravity)*(mu_d(2)-gravity));
+		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot -  _est_dist_lin/_mass;
+		_u_T = _mass*sqrt(mu_d(0)*mu_d(0) + mu_d(1)*mu_d(1) + (mu_d(2)-gravity)*(mu_d(2)-gravity));
 
 
 
-		phi_ref = asin( mass/_u_T*( mu_d(1)*cos(_eta_ref(2)) - mu_d(0)*sin(_eta_ref(2)) ) );
+		phi_ref = asin( _mass/_u_T*( mu_d(1)*cos(_eta_ref(2)) - mu_d(0)*sin(_eta_ref(2)) ) );
 		phi_ref_dot = (phi_ref-phi_ref_old)/Ts;  // Ts=0.01
 		phi_ref_dot_dot = (phi_ref_dot-phi_ref_dot_old)/Ts;  // Ts=0.01
 
@@ -444,7 +451,7 @@ void hierarchical_controller::ctrl_loop() {
 
 		Eigen::Vector3d _tau_b_real;
 		_tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot -(_Q.transpose()).inverse()*_est_dist_ang;
-		_tau_b_real = _tau_b + Eigen::Vector3d(0.05,0.1,0.2);	//disturbo
+		_tau_b_real = _tau_b + Eigen::Vector3d(0.0,0.0,0.0);	//disturbo
 
 		geometry_msgs::Wrench wrench_msg;
 		wrench_msg.force.x = 0;

@@ -9,7 +9,9 @@
 //Include tf libraries							
 #include "tf2_msgs/TFMessage.h"
 #include "tf/transform_listener.h"
-
+#include <gazebo_msgs/SpawnModel.h>
+#include <fstream>
+#include "ros/package.h"
 //const double Ts = 0.01;
 const int obstacle_array_size = 7;
 
@@ -31,6 +33,10 @@ class rrt_planner {
 
 		void rrt_planner_loop();	
 		void run();
+		void spawnNode( Eigen::Vector3d point , int node_number , int type);
+		void spawnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number);
+
+
 		Eigen::Vector3d attractive_force_calc();
 		Eigen::Vector3d repulsive_force_calc( double x_obs , double y_obs, double z_obs ,double eta_obs_i , double radius_obstacle);
 		
@@ -102,6 +108,135 @@ void rrt_planner::init_obstacles(){
 	obstacle_array[6].radius = 0.5;
 }
 
+void rrt_planner::spawnNode( Eigen::Vector3d point , int node_number, int type){			//type 0->node type 1->goal
+    ros::service::waitForService("/gazebo/spawn_urdf_model");
+    ros::ServiceClient spawn_model_client = _nh.serviceClient<gazebo_msgs::SpawnModel>("/gazebo/spawn_urdf_model");
+
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+
+    gazebo_msgs::SpawnModel spawn_model;
+	std::stringstream model_buffer;	
+	if (type == 0){
+		std::ifstream model_file(pkg_loc + "/urdf/node.urdf");  
+		model_buffer << model_file.rdbuf();
+		spawn_model.request.model_xml = model_buffer.str();
+		spawn_model.request.model_name = "node" + std::to_string(node_number);
+		spawn_model.request.reference_frame = "world";
+	}
+	if (type == 1){
+		std::ifstream model_file(pkg_loc + "/urdf/goal.urdf");  
+		model_buffer << model_file.rdbuf();
+		spawn_model.request.model_xml = model_buffer.str();
+		spawn_model.request.model_name = "goal";
+		spawn_model.request.reference_frame = "world";		
+	}
+    spawn_model.request.initial_pose.position.x = point[0];
+    spawn_model.request.initial_pose.position.y = -point[1];
+    spawn_model.request.initial_pose.position.z = -point[2];
+
+    if (spawn_model_client.call(spawn_model))
+   {
+ //     ROS_INFO("Node spawned successfully!");
+   }
+    else
+    {
+        ROS_ERROR("Failed to spawn node.");
+    }
+}
+
+Eigen::Matrix3d skew(Eigen::Vector3d v){
+	Eigen::Matrix3d skew;
+	skew <<    0 , -v(2) , v(1),
+			 v(2) , 0   , -v(0),
+			-v(1) , v(0) ,    0;
+	return skew;
+}
+
+
+
+
+void rrt_planner::spawnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number){
+    ros::NodeHandle nh;
+    ros::ServiceClient spawn_model_client = nh.serviceClient<gazebo_msgs::SpawnModel>("/gazebo/spawn_urdf_model");
+
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+
+	std::ifstream model_file(pkg_loc + "/urdf/arrow.urdf");  
+    std::stringstream model_buffer;
+    model_buffer << model_file.rdbuf();
+    std::string model_xml = model_buffer.str();
+
+	start_point[1] = -start_point[1];
+	start_point[2] = -start_point[2];
+	end_point[1] = -end_point[1];
+	end_point[2] = -end_point[2];
+
+    // Calculate the length and orientation of the arrow
+    double length = std::sqrt(std::pow(end_point[0] - start_point[0], 2) +
+                              std::pow(end_point[1] - start_point[1], 2) +
+                              std::pow(end_point[2] - start_point[2], 2));
+    std::string length_placeholder = "0.777";  // Placeholder length in the URDF model
+    std::string length_string = "" + std::to_string(length) ;
+    size_t pos = model_xml.find(length_placeholder);
+    if (pos != std::string::npos){
+        model_xml.replace(pos, length_placeholder.length(), length_string);
+	}
+
+
+
+
+
+    length_placeholder = "0.555";  // Placeholder length in the URDF model
+    length_string = "" + std::to_string(length/2);
+    pos = model_xml.find(length_placeholder);
+    if (pos != std::string::npos){
+        model_xml.replace(pos, length_placeholder.length(), length_string);
+	}
+
+    // Prepare the SpawnModel service request
+    gazebo_msgs::SpawnModel spawn_model;
+    spawn_model.request.model_xml = model_xml;
+    spawn_model.request.model_name = "arrow"  + std::to_string(arrow_number);
+    spawn_model.request.reference_frame = "world";
+    spawn_model.request.initial_pose.position.x = start_point[0];
+    spawn_model.request.initial_pose.position.y = start_point[1];
+    spawn_model.request.initial_pose.position.z = start_point[2];
+
+    // Calculate orientation based on start and end points
+
+	Eigen::Vector3d x(1,0,0);
+	Eigen::Vector3d z = end_point - start_point;
+	z.normalize();
+	Eigen::Vector3d y = skew(z)*x;
+	y.normalize();
+	Eigen::Matrix3d R;
+	R.block<3,1>(0,0) = skew(y)*z; 
+	R.block<3,1>(0,1) = y;
+	R.block<3,1>(0,2) = z;
+
+	Eigen::Quaterniond quat(R);
+
+    spawn_model.request.initial_pose.orientation.x = quat.x();
+    spawn_model.request.initial_pose.orientation.y = quat.y();
+    spawn_model.request.initial_pose.orientation.z = quat.z();
+    spawn_model.request.initial_pose.orientation.w = quat.w();
+
+
+
+    // Call the SpawnModel service
+    if (spawn_model_client.call(spawn_model))
+    {
+        ROS_INFO("Arrow spawned successfully!");
+    }
+    else
+    {
+        ROS_ERROR("Failed to spawn arrow.");
+    }
+}
+
+
+
+
 
 bool rrt_planner::collision_check_line(Eigen::Vector4d q1 , Eigen::Vector3d q2 ){
 	bool collision = false;
@@ -129,7 +264,6 @@ bool rrt_planner::collision_check_line(Eigen::Vector4d q1 , Eigen::Vector3d q2 )
 	}
 	return false;
 }
-
 
 
 void rrt_planner::rrt_planner_loop(){
@@ -166,6 +300,7 @@ void rrt_planner::rrt_planner_loop(){
 	zmax = -0.5;
 
 	while(ros::ok()){
+
 
 		std::cout << "Insert x reference" << endl;
 		std::cin >> _goal_pos[0];
@@ -237,11 +372,26 @@ void rrt_planner::rrt_planner_loop(){
 
 		std::cout << "Success !!!" << endl;
 
+		Eigen::Vector4d node;
+		int parent_id;
+		for (int i = 1 ; i < _roadmap.cols() ; i++){
+			node = _roadmap.block<4,1>(0,i);
+			parent_id = _roadmap(3,i);	
+			if (parent_id != min_index){
+				spawnNode( node.block<3,1>(0,0), i , 0);		//does not spawn goal
+			}
+			if (parent_id != -1){
+				spawnArrow( node.block<3,1>(0,0) , _roadmap.block<3,1>(0,parent_id) , i);
+			}
+		}
+		spawnNode(_goal_pos , 0 , 1);
+
+
+
 		Eigen::MatrixXd soln(3,1);
 		soln.block<3,1>(0,0) = _goal_pos; 
 		std::cout << "soln:" << soln << endl;
 
-		std::cout << "prova0" << endl;
 
 		int parent = min_index;
 		int k = 1;
@@ -251,17 +401,13 @@ void rrt_planner::rrt_planner_loop(){
 			soln.conservativeResize(3,k+1);
 			soln.block<3,1>(0,k) = _roadmap.block<3,1>(0,parent);		
 			_roadmap.block<3,1>(0,parent) << 4,5,6;
-			std::cout << "prova1"<< endl;	
 			parent = _roadmap(3,parent);
-			std::cout << "prova2"<< endl;	
 			k++;
 		}while (parent != -1);
 
-		std::cout << "prova3" << endl;
 
 		waypoints_msg.layout.dim[0].size = soln.cols()-1; 
 
-		std::cout << "prova4" << endl;
 
 		for (int i=k-2 ; i>=0 ; i--){
 			std::cout << "node " << k-1-i << " : " << soln.block<3,1>(0,i) << endl;
