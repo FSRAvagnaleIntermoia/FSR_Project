@@ -131,7 +131,7 @@ class geometric_controller {
 
 
 
-geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(1.57) , _pos_ref_dot(0,0,0) , _psi_ref_dot(0), _pos_ref_dot_dot(0,0,0) , _psi_ref_dot_dot(0) {
+geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , _pos_ref_dot(0,0,0) , _psi_ref_dot(0), _pos_ref_dot_dot(0,0,0) , _psi_ref_dot_dot(0) {
 
 	_x_sub = _nh.subscribe("/firefly/planner/x_ref", 0, &geometric_controller::x_ref_callback, this);	
 	_y_sub = _nh.subscribe("/firefly/planner/y_ref", 0, &geometric_controller::y_ref_callback, this);	
@@ -258,7 +258,8 @@ void geometric_controller::odom_callback( nav_msgs::Odometry odom ) {
 	
     _p_b = _R_enu2ned*pos_enu;		//trasformazione da enu a ned -> pb è in ned
 	_p_b_dot = _R_enu2ned*vel_enu;
-	_p_b_dot = _Rb.transpose()*_p_b_dot;
+//	_p_b_dot = _Rb.transpose()*_p_b_dot;
+	_p_b_dot = _Rb*_p_b_dot;
 
 
 	_first_odom = true;
