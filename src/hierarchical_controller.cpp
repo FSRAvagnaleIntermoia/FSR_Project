@@ -295,14 +295,13 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 void hierarchical_controller::estimator_loop() {	
 //G=k0^2/(k0+s)^2; transfer function for the estimator
 	ros::Rate rate(100);
-	double c0 = 0.1;
+	double c0 = 10;
 	double k0 = c0;
-	double k2 = 2*k0;
-	double k1 = k0/2; 
+//	double k2 = 2*k0;
+//	double k1 = k0/2; 
 	Eigen::Vector3d e3(0,0,1);
 
-	_est_dist_lin.setZero();
-	_est_dist_ang.setZero();
+
 
 	Eigen::Vector3d q_lin;
 	Eigen::Vector3d q_ang;
@@ -310,12 +309,12 @@ void hierarchical_controller::estimator_loop() {
 
 	Eigen::Vector3d q_dot_lin_est;
 	Eigen::Vector3d q_dot_ang_est;
-	q_dot_lin_est.setZero();
-	q_dot_ang_est.setZero();
 	Eigen::Vector3d q_lin_est;
 	Eigen::Vector3d q_ang_est;
 	q_lin_est.setZero();
 	q_ang_est.setZero();		
+	_est_dist_lin.setZero();
+	_est_dist_ang.setZero();	
 
 	_u_T = 0;
 	_tau_b.setZero();
@@ -401,7 +400,7 @@ void hierarchical_controller::ctrl_loop() {
 		e_eta_int = e_eta_int + e_eta*Ts;
 		
 
-		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot;// -  _tf_est_dist_lin/mass;
+		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot -  _est_dist_lin/mass;
 		_u_T = mass*sqrt(mu_d(0)*mu_d(0) + mu_d(1)*mu_d(1) + (mu_d(2)-gravity)*(mu_d(2)-gravity));
 
 
@@ -442,7 +441,9 @@ void hierarchical_controller::ctrl_loop() {
 
 		tau_tilde =  -_Ke*e_eta - _Ke_dot*e_eta_dot - _Ki_e*e_eta_int + _eta_ref_dot_dot;
 
-		_tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot;// -(_Q.transpose()).inverse()*_tf_est_dist_ang;
+		Eigen::Vector3d _tau_b_real;
+		_tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot -(_Q.transpose()).inverse()*_est_dist_ang;
+		_tau_b_real = _tau_b + Eigen::Vector3d(0.05,0.1,0.2);	//disturbo
 
 		geometry_msgs::Wrench wrench_msg;
 		wrench_msg.force.x = 0;
@@ -459,9 +460,9 @@ void hierarchical_controller::ctrl_loop() {
 		theta_ref_dot_old = theta_ref_dot;		
 
 		control_input(0) = _u_T;
-		control_input(1) = _tau_b(0);
-		control_input(2) = _tau_b(1);
-		control_input(3) = _tau_b(2);
+		control_input(1) = _tau_b_real(0);
+		control_input(2) = _tau_b_real(1);
+		control_input(3) = _tau_b_real(2);
 	
 		angular_velocities_sq =  _allocation_matrix.transpose()*(_allocation_matrix*_allocation_matrix.transpose()).inverse() * control_input;
 
