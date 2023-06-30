@@ -1,13 +1,14 @@
 # Field and Service Robotics Technical Project
-Michele Avagnale P38000144 --
-Nicholas Intermoia P38000137
+Michele Avagnale P38000144 \
+Nicholas Intermoia P38000137 
 
 ## Hierarchical controller
-https://github.com/FSRAvagnaleIntermoia/FSR_Project/assets/80157936/75308369-1e86-455a-916f-01ffceec3d43
-With disturbance and estimator
-https://github.com/FSRAvagnaleIntermoia/FSR_Project/assets/80157936/4edf2a3d-a335-4366-83b4-b4b3c5e20a4d
 
+https://github.com/FSRAvagnaleIntermoia/FSR_Project/assets/80157936/0910b78c-0fea-4b45-a5fa-f425e9b70d9c
 
+With disturbances and estimator
+
+https://github.com/FSRAvagnaleIntermoia/FSR_Project/assets/80157936/c19fd3ba-00ec-4edf-b350-bef2bd612cc0
 ## Geometric controller
 
 
