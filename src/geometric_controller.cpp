@@ -6,6 +6,8 @@
 #include "std_msgs/Float64.h"
 #include "std_msgs/Float64MultiArray.h"
 #include "geometry_msgs/Wrench.h"
+#include <fstream>
+#include "ros/package.h"
 
 
 //Include tf libraries							
@@ -16,7 +18,7 @@
 using namespace std;
 
 const double gravity = 9.8;
-const double mass = 1.56779;
+const double _mass = 1.56779;
 const double Ixx = 0.0347563;
 const double Iyy = 0.0458929;
 const double Izz = 0.0977;
@@ -26,17 +28,13 @@ const double arm_length = 0.215;
 const int motor_number = 6;
 const double Ts = 0.01;
 
-
-
+const double uncertainty = 1;
 
 class geometric_controller {
 	public:
 		geometric_controller();			
 		void ctrl_loop();
         void run();
-
-
-
 
 		void x_ref_callback( std_msgs::Float64 msg);
 		void y_ref_callback( std_msgs::Float64 msg);
@@ -58,6 +56,9 @@ class geometric_controller {
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
 
+
+		void empty_txt();
+		void log_data();
 
 	private:
 		ros::NodeHandle _nh;
@@ -103,6 +104,9 @@ class geometric_controller {
 		Eigen::Vector3d _p_b;
 		Eigen::Vector3d _p_b_dot;
 
+		double _mass;
+	
+
 
 //		tf::Matrix3x3 _Kp;
 //		tf::Matrix3x3 _Ke;
@@ -121,11 +125,17 @@ class geometric_controller {
 
 
 		double _u_T;
+		Eigen::Vector3d e_R;
+		Eigen::Vector3d e_W;
 
 		Eigen::Vector3d _tau_b;
 
+		double _log_time;	//for data log
+
+
 		bool _first_imu;
 		bool _first_odom;
+		bool _first_ref;
 		bool _control_on;
 };
 
@@ -165,17 +175,22 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 	_control_on = false;
 
  	_R_enu2ned << 1,0,0,0,-1,0,0,0,-1; 
-	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
 
-	_Kp = 5;
-	_Kv = 5;
+	_mass = 1.56779;
+	_mass = _mass * uncertainty;
+	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
+	_Ib = _Ib * uncertainty;
+	_Kp = 10;
+	_Kv = 10;
 	_KR << 3 , 0 , 0 , 0 , 3 , 0 , 0 , 0 , 0.03;
 	_KW << 0.5 , 0 , 0 , 0 , 0.5 , 0 , 0 , 0 , 0.05;
-	_Ki = 0.1;
+	_Ki = 0.2;
 	_Ki_R << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.1;
 
 	_Rb.setIdentity();
 	cout << _Rb << endl;
+	_log_time = 0;
+	empty_txt();
 }
 
 
@@ -194,6 +209,7 @@ Eigen::Vector3d v_operator( Eigen::Matrix3d skew_matrix ){
 }
 
 void geometric_controller::x_ref_callback( std_msgs::Float64 msg){
+	_first_ref = true;
 	_pos_ref[0] = msg.data;
 }
 void geometric_controller::y_ref_callback( std_msgs::Float64 msg){
@@ -263,7 +279,7 @@ void geometric_controller::imu_callback ( sensor_msgs::Imu imu ){
 void geometric_controller::ctrl_loop() {	
 	ros::Rate rate(100);
 
-	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_R, e_W, e_int_R ;
+	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_int_R ;
 	Eigen::Vector3d z_bd , x_bd , y_bd , omega_b_b_ref, omega_b_b_ref_dot , omega_b_b_ref_old , omega_b_b_ref_old_f , omega_b_b_ref_f , omega_b_b_ref_dot_f , omega_b_b_ref_dot_old_f , omega_b_b_ref_dot_old , A;
 	Eigen::Vector3d e3(0,0,1);
 	Eigen::Matrix3d Rb_d , Rb_d_old , Rb_d_dot , Rb_d_dot_f , Rb_d_dot_old_f, Rb_d_dot_old;
@@ -320,7 +336,7 @@ void geometric_controller::ctrl_loop() {
 		e_p = _p_b - _pos_ref;
 		e_p_dot = _p_b_dot - _pos_ref_dot;
 		e_p_int = e_p_int + e_p*Ts;
-		A = -_Kp*e_p -_Ki*e_p_int - _Kv*e_p_dot - mass*gravity*e3 + mass*_pos_ref_dot_dot;
+		A = -_Kp*e_p -_Ki*e_p_int - _Kv*e_p_dot - _mass*gravity*e3 + _mass*_pos_ref_dot_dot;
 
 		z_bd = -A/A.norm();
 		x_bd(0) = cos(_psi_ref);
@@ -394,7 +410,15 @@ void geometric_controller::ctrl_loop() {
 		    	act_msg.angular_velocities[i] = 0;
 			}
 		}
-	
+
+			//FOR DATA LOGGING
+
+		if (_first_ref == true &&  _log_time < 120){
+			log_data();			
+			_log_time = _log_time + Ts;	
+		}	
+
+
 		_act_pub.publish(act_msg);
 
 
@@ -402,6 +426,171 @@ void geometric_controller::ctrl_loop() {
 		rate.sleep();		
 	}
 }
+
+
+
+void geometric_controller::empty_txt(){
+
+    // "svuota" i file di testo
+
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+	
+    ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
+    file_pos_x << "";
+    file_pos_x.close();
+    ofstream file_pos_y(pkg_loc + "/data/pos_y.txt");
+    file_pos_y << "";
+    file_pos_y.close();
+    ofstream file_pos_z(pkg_loc + "/data/pos_z.txt");
+    file_pos_z << "";
+    file_pos_z.close();
+
+    ofstream file_pos_x_ref(pkg_loc + "/data/pos_x_ref.txt");
+    file_pos_x_ref << "";
+    file_pos_x_ref.close();
+    ofstream file_pos_y_ref(pkg_loc + "/data/pos_y_ref.txt");
+    file_pos_y_ref << "";
+    file_pos_y_ref.close();
+    ofstream file_pos_z_ref(pkg_loc + "/data/pos_z_ref.txt");
+    file_pos_z_ref << "";
+    file_pos_z_ref.close();		
+
+    ofstream file_pos_x_err(pkg_loc + "/data/pos_x_err.txt");
+    file_pos_x_err << "";
+    file_pos_x_err.close();
+    ofstream file_pos_y_err(pkg_loc + "/data/pos_y_err.txt");
+    file_pos_y_err << "";
+    file_pos_y_err.close();
+    ofstream file_pos_z_err(pkg_loc + "/data/pos_z_err.txt");
+    file_pos_z_err << "";
+    file_pos_z_err.close();		
+	
+    ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt");
+    file_vel_x_err << "";
+    file_vel_x_err.close();
+    ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt");
+    file_vel_y_err << "";
+    file_vel_y_err.close();
+    ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt");
+    file_vel_z_err << "";
+    file_vel_z_err.close();
+
+    ofstream file_e_R_x(pkg_loc + "/data/e_R_x.txt");
+    file_e_R_x << "";
+    file_e_R_x.close();
+    ofstream file_e_R_y(pkg_loc + "/data/e_R_y.txt");
+    file_e_R_y << "";
+    file_e_R_y.close();
+    ofstream file_e_R_z(pkg_loc + "/data/e_R_z.txt");
+    file_e_R_z << "";
+    file_e_R_z.close();	
+
+    ofstream file_e_W_x(pkg_loc + "/data/e_W_x.txt");
+    file_e_W_x << "";
+    file_e_W_x.close();
+    ofstream file_e_W_y(pkg_loc + "/data/e_W_y.txt");
+    file_e_W_y << "";
+    file_e_W_y.close();
+    ofstream file_e_W_z(pkg_loc + "/data/e_W_z.txt");
+    file_e_W_z << "";
+    file_e_W_z.close();		
+	
+
+    ofstream file_uT(pkg_loc + "/data/uT.txt");
+    file_uT << "";
+    file_uT.close();
+    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt");
+    file_taub_x << "";
+    file_taub_x.close();
+    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt");
+    file_taub_y << "";
+    file_taub_y.close();
+    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt");
+    file_taub_z << "";
+    file_taub_z.close();			
+
+}
+
+
+void geometric_controller::log_data(){
+	cout << "logging" << endl;
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+
+	ofstream file_x(pkg_loc + "/data/pos_x.txt",std::ios_base::app);
+	file_x << _p_b(0) <<endl;
+	file_x.close();
+	ofstream file_y(pkg_loc + "/data/pos_y.txt",std::ios_base::app);
+	file_y << _p_b(1) <<endl;
+	file_y.close();
+	ofstream file_z(pkg_loc + "/data/pos_z.txt",std::ios_base::app);
+	file_z << _p_b(2) <<endl;
+	file_z.close();							
+
+	ofstream file_x_ref(pkg_loc + "/data/pos_x_ref.txt",std::ios_base::app);
+	file_x_ref << _pos_ref(0) <<endl;
+	file_x_ref.close();
+	ofstream file_y_ref(pkg_loc + "/data/pos_y_ref.txt",std::ios_base::app);
+	file_y_ref << _pos_ref(1) <<endl;
+	file_y_ref.close();
+	ofstream file_z_ref(pkg_loc + "/data/pos_z_ref.txt",std::ios_base::app);
+	file_z_ref << _pos_ref(2) <<endl;
+	file_z_ref.close();			
+
+	ofstream file_x_err(pkg_loc + "/data/pos_x_err.txt",std::ios_base::app);
+	file_x_err << _p_b(0)-_pos_ref(0) <<endl;
+	file_x_err.close();
+	ofstream file_y_err(pkg_loc + "/data/pos_y_err.txt",std::ios_base::app);
+	file_y_err << _p_b(1)-_pos_ref(1) <<endl;
+	file_y_err.close();
+	ofstream file_z_err(pkg_loc + "/data/pos_z_err.txt",std::ios_base::app);
+	file_z_err << _p_b(2)-_pos_ref(2) <<endl;
+	file_z_err.close();			
+	
+	ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt",std::ios_base::app);
+	file_vel_x_err << _p_b_dot(0)-_pos_ref_dot(0) <<endl;
+	file_vel_x_err.close();
+	ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt",std::ios_base::app);
+	file_vel_y_err << _p_b_dot(1)-_pos_ref_dot(1) <<endl;
+	file_vel_y_err.close();
+	ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt",std::ios_base::app);
+	file_vel_z_err << _p_b_dot(2)-_pos_ref_dot(2) <<endl;
+	file_vel_z_err.close();			
+
+    ofstream file_uT(pkg_loc + "/data/uT.txt",std::ios_base::app);
+    file_uT << _u_T << endl;
+    file_uT.close();
+    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt",std::ios_base::app);
+    file_taub_x << _tau_b(0) << endl;
+    file_taub_x.close();
+    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt",std::ios_base::app);
+    file_taub_y << _tau_b(1) << endl;
+    file_taub_y.close();
+    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt",std::ios_base::app);
+    file_taub_z << _tau_b(2) <<endl;
+    file_taub_z.close();		
+
+    ofstream file_e_R_x(pkg_loc + "/data/e_R_x.txt",std::ios_base::app);
+    file_e_R_x << e_R(0) << endl;
+    file_e_R_x.close();
+    ofstream file_e_R_y(pkg_loc + "/data/e_R_y.txt",std::ios_base::app);
+    file_e_R_y << e_R(1) << endl;
+    file_e_R_y.close();
+    ofstream file_e_R_z(pkg_loc + "/data/e_R_z.txt",std::ios_base::app);
+    file_e_R_z << e_R(2) << endl;
+    file_e_R_z.close();	
+
+    ofstream file_e_W_x(pkg_loc + "/data/e_W_x.txt",std::ios_base::app);
+    file_e_W_x << e_W(0) << endl;
+    file_e_W_x.close();
+    ofstream file_e_W_y(pkg_loc + "/data/e_W_y.txt",std::ios_base::app);
+    file_e_W_y << e_W(1) << endl;
+    file_e_W_y.close();
+    ofstream file_e_W_z(pkg_loc + "/data/e_W_z.txt",std::ios_base::app);
+    file_e_W_z << e_W(2) << endl;
+    file_e_W_z.close();		
+
+}
+
 
 void geometric_controller::run() {
 	boost::thread ctrl_loop_t ( &geometric_controller::ctrl_loop, this);

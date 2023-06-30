@@ -6,7 +6,7 @@
       <arg name="log_file" default="$(arg mav_name)"/>
       <arg name="debug" default="false"/>
       <arg name="gui" default="true"/>
-      <arg name="paused" default="false"/>
+      <arg name="paused" default="true"/>
       <!-- The following line causes gzmsg and gzerr messages to be printed to the console
             (even when Gazebo is started through roslaunch) -->
       <arg name="verbose" default="false"/>
@@ -33,7 +33,7 @@
 
             <param name="colonna_description" textfile="$(find fsr_pkg)/urdf/colonna.urdf" />              
 
-    <node name="hierarchical_controller" pkg="fsr_pkg" type="hierarchical_controller" output="screen" >
+    <node name="passivity_based_controller" pkg="fsr_pkg" type="passivity_based_controller" output="screen" >
     </node>   
                   
       <node name="spawn_traj" pkg="gazebo_ros" type="spawn_model"

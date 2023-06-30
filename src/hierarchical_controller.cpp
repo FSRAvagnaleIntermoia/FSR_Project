@@ -56,12 +56,12 @@ class hierarchical_controller {
 		void psi_dot_dot_ref_callback( std_msgs::Float64 msg);
 
 
-		void empty_txt();
-		void log_data();
-
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
 
+
+		void empty_txt();
+		void log_data();
 
 	private:
 		ros::NodeHandle _nh;
@@ -191,7 +191,7 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_Kp_dot = 1;
 	_Ke << 50 , 0 , 0 , 0 , 50 , 0 , 0 , 0 , 25;
 	_Ke_dot << 10 , 0 , 0 , 0 , 10 , 0 , 0 , 0 , 5;
-	_Ki = 0.5;
+	_Ki = 0.1;
 	_Ki_e << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.05;
 
 	_Q.setIdentity();
@@ -387,6 +387,8 @@ void hierarchical_controller::ctrl_loop() {
 	std::cout << "Control on" << endl;
 	_control_on = true;
 
+	Eigen::Vector3d ang_dist = Eigen::Vector3d(0.0,0.0,0.0);	//disturbance
+
 	double phi_ref , theta_ref , phi_ref_dot, theta_ref_dot , phi_ref_dot_dot , theta_ref_dot_dot , phi_ref_old = 0 , theta_ref_old = 0 , phi_ref_dot_old = 0 , theta_ref_dot_old = 0 ;
 
 	float phi_ref_dot_dot_f = 0.0;
@@ -462,8 +464,7 @@ void hierarchical_controller::ctrl_loop() {
 
 		Eigen::Vector3d _tau_b_real;
 		_tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot -(_Q.transpose()).inverse()*_est_dist_ang;
-		_tau_b_real = _tau_b + Eigen::Vector3d(0.0,0.0,0.0);	//disturbo
-
+		_tau_b_real = _tau_b + ang_dist;
 		geometry_msgs::Wrench wrench_msg;
 		wrench_msg.force.x = 0;
 		wrench_msg.force.y = 0;
@@ -497,7 +498,7 @@ void hierarchical_controller::ctrl_loop() {
 		}
 			//FOR DATA LOGGING
 
-		if (_first_ref == true &&  _log_time < 30){
+		if (_first_ref == true &&  _log_time < 60){
 			log_data();			
 			_log_time = _log_time + Ts;	
 		}	

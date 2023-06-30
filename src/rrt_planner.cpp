@@ -53,6 +53,8 @@ class rrt_planner {
 		double _delta;
 		double _iter_number;
 
+		double _xmin, _xmax, _ymin, _ymax, _zmin, _zmax;
+
 		obstacle obstacle_array[obstacle_array_size];
 
 		int rate;
@@ -76,6 +78,15 @@ rrt_planner::rrt_planner(){
 
 	_delta = 2;
 	_iter_number = 10;
+
+	_xmin = 0;
+	_xmax = 10;
+	_ymin = -10;
+	_ymax = 0;
+	_zmin = -5;
+	_zmax = -0.5;
+
+
 }
 
 void rrt_planner::init_obstacles(){
@@ -322,6 +333,7 @@ bool rrt_planner::collision_check_line(Eigen::Vector4d q1 , Eigen::Vector3d q2 )
 	Eigen::Vector3d d;
 	d = (q2.block<3,1>(0,0) - q1.block<3,1>(0,0))/(q2.block<3,1>(0,0) - q1.block<3,1>(0,0)).norm();
 	double k = 0.1;
+
 	while ( ( k < (q2.block<3,1>(0,0) - q1.block<3,1>(0,0)).norm() ) && !collision ){
 		x = q1(0) + d(0)*k;
 		y = q1(1) + d(1)*k;
@@ -334,6 +346,11 @@ bool rrt_planner::collision_check_line(Eigen::Vector4d q1 , Eigen::Vector3d q2 )
 				std::cout << "collision" << endl;
 				collision = true;
 				return true;
+			}
+			if ( (q2(0)>_xmax) || (q2(0)<_xmin) || (q2(1)>_ymax)  || q2(1)<_ymin || q2(2)>_zmax || q2(2)<_zmin ){
+				std::cout << "out of bound" << endl;
+				collision = true;
+				return true;				
 			}
 		}
 //		std::cout << "k: " << k << endl;
@@ -365,16 +382,9 @@ void rrt_planner::rrt_planner_loop(){
 	std_msgs::Float64MultiArray waypoints_msg;
    	waypoints_msg.layout.dim.resize(1);	
 
-	srand (time(NULL));
-//	srand(2022);
+//	srand (time(NULL));
+	srand(2022);
 
-	double xmin, xmax, ymin, ymax, zmin, zmax;
-	xmin = 0;
-	xmax = 10;
-	ymin = -10;
-	ymax = 0;
-	zmin = -5;
-	zmax = -0.5;
 
 	while(ros::ok()){
 
@@ -392,9 +402,9 @@ void rrt_planner::rrt_planner_loop(){
 		while(!finish){
 
 			for( int i = 0 ; i < iter ; i++){
-				rx =  (rand() / (double)RAND_MAX) * (xmax - xmin) + xmin;
-				ry =  (rand() / (double)RAND_MAX) * (ymax - ymin) + ymin;
-				rz =  (rand() / (double)RAND_MAX) * (zmax - zmin) + zmin;
+				rx =  (rand() / (double)RAND_MAX) * (_xmax - _xmin) + _xmin;
+				ry =  (rand() / (double)RAND_MAX) * (_ymax - _ymin) + _ymin;
+				rz =  (rand() / (double)RAND_MAX) * (_zmax - _zmin) + _zmin;
 				q_rand << rx,ry,rz ;
 		//		std::cout << "q_rand: " << q_rand << endl;
 

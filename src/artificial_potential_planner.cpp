@@ -8,6 +8,8 @@
 //Include tf libraries							
 #include "tf2_msgs/TFMessage.h"
 #include "tf/transform_listener.h"
+#include "ros/package.h"
+#include <fstream>
 
 //const double Ts = 0.01;
 const int obstacle_array_size = 7;
@@ -35,6 +37,10 @@ class artificial_potential_planner {
 		Eigen::Vector3d attractive_force_calc();
 		Eigen::Vector3d repulsive_force_calc( double x_obs , double y_obs, double z_obs ,double eta_obs_i , double radius_obstacle);
 		
+
+		void empty_txt();
+		void log_data();
+
 	private:
 		ros::NodeHandle _nh;
         ros::Subscriber _odom_sub;
@@ -66,6 +72,11 @@ class artificial_potential_planner {
 		Eigen::Vector3d _goal_pos;
 		Eigen::Vector3d _pos;	
 		Eigen::Vector3d _vel;	
+
+
+		Eigen::Vector3d p;
+		Eigen::Vector3d p_dot;	
+		Eigen::Vector3d p_dot_dot_f;			
 
 		obstacle obstacle_array[obstacle_array_size];
 
@@ -105,6 +116,8 @@ artificial_potential_planner::artificial_potential_planner(){
 	_z_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_dot_ref", 1);
 
 	init_obstacles();
+
+	empty_txt();
 }
 
 void artificial_potential_planner::init_obstacles(){
@@ -229,7 +242,8 @@ void artificial_potential_planner::stop_drone(){
 
 void artificial_potential_planner::artificial_potential_planner_loop(){
 
-	Eigen::Vector3d p , p_dot , p_dot_dot , p_dot_dot_f;
+//	Eigen::Vector3d p , p_dot , p_dot_dot , p_dot_dot_f;
+	Eigen::Vector3d  p_dot_dot;
 	Eigen::Vector3d p_dot_old, p_dot_dot_old , p_dot_dot_old_f;
 	p.setZero();
 	p(2) = -1;
@@ -301,6 +315,8 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 	//		cout << p_dot_dot << endl << endl;
 	//		cout << "p:" << p << endl << endl;
 
+			log_data();
+
 			if ( (abs((_goal_pos[0]-_pos[0])) < 0.01) && (abs((_goal_pos[1]-_pos[1]))< 0.01) && (abs((_goal_pos[2]-_pos[2])) < 0.01)){
 				stop_drone();
 				finish = true;
@@ -311,6 +327,85 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 		}
 	}
 }
+
+
+void artificial_potential_planner::empty_txt(){
+
+    // "svuota" i file di testo
+
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+	
+    ofstream file_app_x(pkg_loc + "/data/app_x.txt");
+    file_app_x << "";
+    file_app_x.close();
+    ofstream file_app_y(pkg_loc + "/data/app_y.txt");
+    file_app_y << "";
+    file_app_y.close();
+    ofstream file_app_z(pkg_loc + "/data/app_z.txt");
+    file_app_z << "";
+    file_app_z.close();
+
+    ofstream file_app_x_dot(pkg_loc + "/data/app_x_dot.txt");
+    file_app_x_dot << "";
+    file_app_x_dot.close();
+    ofstream file_app_y_dot(pkg_loc + "/data/app_y_dot.txt");
+    file_app_y_dot << "";
+    file_app_y_dot.close();
+    ofstream file_app_z_dot(pkg_loc + "/data/app_z_dot.txt");
+    file_app_z_dot << "";
+    file_app_z_dot.close();
+
+    ofstream file_app_x_dot_dot(pkg_loc + "/data/app_x_dot_dot.txt");
+    file_app_x_dot_dot << "";
+    file_app_x_dot_dot.close();
+    ofstream file_app_y_dot_dot(pkg_loc + "/data/app_y_dot_dot.txt");
+    file_app_y_dot_dot << "";
+    file_app_y_dot_dot.close();
+    ofstream file_app_z_dot_dot(pkg_loc + "/data/app_z_dot_dot.txt");
+    file_app_z_dot_dot << "";
+    file_app_z_dot_dot.close();
+
+}
+
+
+
+void artificial_potential_planner::log_data(){
+	cout << "logging" << endl;
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+
+   ofstream file_app_x(pkg_loc + "/data/app_x.txt",std::ios_base::app);
+    file_app_x << p(0) << endl;
+    file_app_x.close();
+    ofstream file_app_y(pkg_loc + "/data/app_y.txt",std::ios_base::app);
+    file_app_y <<  p(1) << endl;
+    file_app_y.close();
+    ofstream file_app_z(pkg_loc + "/data/app_z.txt",std::ios_base::app);
+    file_app_z <<  p(2) << endl;
+    file_app_z.close();
+
+    ofstream file_app_x_dot(pkg_loc + "/data/app_x_dot.txt",std::ios_base::app);
+    file_app_x_dot << p_dot(0) << endl;
+    file_app_x_dot.close();
+    ofstream file_app_y_dot(pkg_loc + "/data/app_y_dot.txt",std::ios_base::app);
+    file_app_y_dot << p_dot(1) << endl;
+    file_app_y_dot.close();
+    ofstream file_app_z_dot(pkg_loc + "/data/app_z_dot.txt",std::ios_base::app);
+    file_app_z_dot << p_dot(2) << endl;
+    file_app_z_dot.close();
+
+    ofstream file_app_x_dot_dot(pkg_loc + "/data/app_x_dot_dot.txt",std::ios_base::app);
+    file_app_x_dot_dot << p_dot_dot_f(0) << endl;
+    file_app_x_dot_dot.close();
+    ofstream file_app_y_dot_dot(pkg_loc + "/data/app_y_dot_dot.txt",std::ios_base::app);
+    file_app_y_dot_dot << p_dot_dot_f(1) << endl;
+    file_app_y_dot_dot.close();
+    ofstream file_app_z_dot_dot(pkg_loc + "/data/app_z_dot_dot.txt",std::ios_base::app);
+    file_app_z_dot_dot << p_dot_dot_f(2) << endl;
+    file_app_z_dot_dot.close();
+}
+
+
+
 
 
 void artificial_potential_planner::run() {

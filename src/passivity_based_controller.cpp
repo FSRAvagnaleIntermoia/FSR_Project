@@ -6,6 +6,8 @@
 #include "std_msgs/Float64.h"
 #include "std_msgs/Float64MultiArray.h"
 #include "geometry_msgs/Wrench.h"
+#include <fstream>
+#include "ros/package.h"
 
 
 //Include tf libraries							
@@ -16,7 +18,6 @@
 using namespace std;
 
 const double gravity = 9.8;
-const double uncertainty = 1.2;
 const double Ixx = 0.0347563;
 const double Iyy = 0.0458929;
 const double Izz = 0.0977;
@@ -26,7 +27,8 @@ const double arm_length = 0.215;
 const int motor_number = 6;
 const double Ts = 0.01;
 
-
+const double uncertainty = 0.9; //0.9
+const bool enable_estimator = 1;
 
 
 class passivity_based_controller {
@@ -58,6 +60,10 @@ class passivity_based_controller {
 
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
+
+
+		void empty_txt();
+		void log_data();
 
 
 	private:
@@ -138,9 +144,13 @@ class passivity_based_controller {
 
 		double _u_T;
 		Eigen::Vector3d _tau_b;
+		double _log_time;	//for data log
+
 
 		bool _first_imu;
 		bool _first_odom;
+		bool _first_ref;
+
 		bool _control_on;
 };
 
@@ -190,7 +200,7 @@ passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _e
 	_Kp_dot = 1;
 	_Ke << 50 , 0 , 0 , 0 , 50 , 0 , 0 , 0 , 25;
 	_Ke_dot << 10 , 0 , 0 , 0 , 10 , 0 , 0 , 0 , 5;
-	_Ki = 0.2;
+	_Ki = 0.5;
 	_Ki_e << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.05;
 
 	_sigma = 1;
@@ -202,6 +212,12 @@ passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _e
 	_Q.setIdentity();
 	_Q_dot.setZero();
 	_Rb.setIdentity();
+
+	_est_dist_lin.setZero();
+	_est_dist_ang.setZero();	
+
+	empty_txt();
+	_log_time = 0;
 }
 
 
@@ -216,6 +232,8 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 
 void passivity_based_controller::x_ref_callback( std_msgs::Float64 msg){
 	_pos_ref[0] = msg.data;
+	_first_ref = true;
+
 }
 void passivity_based_controller::y_ref_callback( std_msgs::Float64 msg){
 	_pos_ref[1] = msg.data;
@@ -316,8 +334,6 @@ void passivity_based_controller::estimator_loop() {
 	ros::Rate rate(100);
 	double c0 = 1;
 	double k0 = c0;
-//	double k2 = 2*k0;
-//	double k1 = k0/2; 
 	Eigen::Vector3d e3(0,0,1);
 
 
@@ -347,8 +363,8 @@ void passivity_based_controller::estimator_loop() {
 		q_dot_lin_est = _est_dist_lin + _mass*gravity*e3 - _u_T*_Rb*e3;
 		q_dot_ang_est = _est_dist_ang + _C.transpose()*_eta_b_dot + _Q.transpose()*_tau_b;
 		
-		q_lin_est = q_lin_est + q_dot_lin_est/100;
-		q_ang_est = q_ang_est + q_dot_ang_est/100;
+		q_lin_est = q_lin_est + q_dot_lin_est*Ts;
+		q_ang_est = q_ang_est + q_dot_ang_est*Ts;
 
 		_est_dist_lin = k0*(q_lin - q_lin_est);
 		_est_dist_ang = k0*(q_ang - q_ang_est);
@@ -390,9 +406,10 @@ void passivity_based_controller::ctrl_loop() {
 	std::cout << "Control on" << endl;
 	_control_on = true;
 
+	Eigen::Vector3d ang_dist = Eigen::Vector3d(0.05,0.1,0.2);	//disturbance
+
 	double phi_ref , theta_ref , phi_ref_dot, theta_ref_dot , phi_ref_dot_dot , theta_ref_dot_dot , phi_ref_old = 0 , theta_ref_old = 0 , phi_ref_dot_old = 0 , theta_ref_dot_old = 0 ;
 	
-
 	float phi_ref_dot_dot_f = 0.0;
 	float theta_ref_dot_dot_f = 0.0;
 	float phi_ref_dot_dot_old_f = 0.0;
@@ -422,7 +439,7 @@ void passivity_based_controller::ctrl_loop() {
 		e_p_int = e_p_int + e_p*Ts;
 		
 
-		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot -  _est_dist_lin/_mass;
+		mu_d = -_Kp*e_p -_Kp_dot*e_p_dot -_Ki*e_p_int  + _pos_ref_dot_dot - _est_dist_lin/_mass;
 		_u_T = _mass*sqrt(mu_d(0)*mu_d(0) + mu_d(1)*mu_d(1) + (mu_d(2)-gravity)*(mu_d(2)-gravity));
 
 
@@ -469,7 +486,7 @@ void passivity_based_controller::ctrl_loop() {
 
 		Eigen::Vector3d _tau_b_real;
 		_tau_b = (_Q.transpose()).inverse()*(_M*eta_r_dot_dot + _C*eta_r_dot -_est_dist_ang -_D_o*v_eta - _K_o*e_eta  );
-		_tau_b_real = _tau_b + Eigen::Vector3d(0.0,0.0,0.0);	//disturbo
+		_tau_b_real = _tau_b + ang_dist;
 
 		geometry_msgs::Wrench wrench_msg;
 		wrench_msg.force.x = 0;
@@ -502,12 +519,217 @@ void passivity_based_controller::ctrl_loop() {
 		    	act_msg.angular_velocities[i] = 0;
 			}
 		}
-	
+			//FOR DATA LOGGING
+
+		if (_first_ref == true &&  _log_time < 30){
+			log_data();			
+			_log_time = _log_time + Ts;	
+		}	
+
+
 		_act_pub.publish(act_msg);
 
 		rate.sleep();		
 	}
 }
+
+
+void passivity_based_controller::empty_txt(){
+
+    // "svuota" i file di testo
+
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+	
+    ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
+    file_pos_x << "";
+    file_pos_x.close();
+    ofstream file_pos_y(pkg_loc + "/data/pos_y.txt");
+    file_pos_y << "";
+    file_pos_y.close();
+    ofstream file_pos_z(pkg_loc + "/data/pos_z.txt");
+    file_pos_z << "";
+    file_pos_z.close();
+    ofstream file_phi(pkg_loc + "/data/phi.txt");
+    file_phi << "";
+    file_phi.close();		
+    ofstream file_theta(pkg_loc + "/data/theta.txt");
+    file_theta << "";
+    file_theta.close();		
+    ofstream file_psi(pkg_loc + "/data/psi.txt");
+    file_psi << "";
+    file_psi.close();				
+
+    ofstream file_pos_x_ref(pkg_loc + "/data/pos_x_ref.txt");
+    file_pos_x_ref << "";
+    file_pos_x_ref.close();
+    ofstream file_pos_y_ref(pkg_loc + "/data/pos_y_ref.txt");
+    file_pos_y_ref << "";
+    file_pos_y_ref.close();
+    ofstream file_pos_z_ref(pkg_loc + "/data/pos_z_ref.txt");
+    file_pos_z_ref << "";
+    file_pos_z_ref.close();		
+    ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt");
+    file_psi_ref << "";
+    file_psi_ref.close();				
+
+    ofstream file_pos_x_err(pkg_loc + "/data/pos_x_err.txt");
+    file_pos_x_err << "";
+    file_pos_x_err.close();
+    ofstream file_pos_y_err(pkg_loc + "/data/pos_y_err.txt");
+    file_pos_y_err << "";
+    file_pos_y_err.close();
+    ofstream file_pos_z_err(pkg_loc + "/data/pos_z_err.txt");
+    file_pos_z_err << "";
+    file_pos_z_err.close();		
+    ofstream file_psi_err(pkg_loc + "/data/psi_err.txt");
+    file_psi_err << "";
+    file_psi_err.close();		
+
+    ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt");
+    file_vel_x_err << "";
+    file_vel_x_err.close();
+    ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt");
+    file_vel_y_err << "";
+    file_vel_y_err.close();
+    ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt");
+    file_vel_z_err << "";
+    file_vel_z_err.close();
+    ofstream file_vel_psi_err(pkg_loc + "/data/vel_psi_err.txt");
+    file_vel_psi_err << "";
+    file_vel_psi_err.close();	
+
+    ofstream file_uT(pkg_loc + "/data/uT.txt");
+    file_uT << "";
+    file_uT.close();
+    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt");
+    file_taub_x << "";
+    file_taub_x.close();
+    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt");
+    file_taub_y << "";
+    file_taub_y.close();
+    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt");
+    file_taub_z << "";
+    file_taub_z.close();			
+
+    ofstream file_est_dist_lin_x(pkg_loc + "/data/est_dist_lin_x.txt");
+    file_est_dist_lin_x << "";
+    file_est_dist_lin_x.close();
+    ofstream file_est_dist_lin_y(pkg_loc + "/data/est_dist_lin_y.txt");
+    file_est_dist_lin_y << "";
+    file_est_dist_lin_y.close();
+    ofstream file_est_dist_lin_z(pkg_loc + "/data/est_dist_lin_z.txt");
+    file_est_dist_lin_z << "";
+    file_est_dist_lin_z.close();
+
+    ofstream file_est_dist_ang_x(pkg_loc + "/data/est_dist_ang_x.txt");
+    file_est_dist_ang_x << "";
+    file_est_dist_ang_x.close();
+    ofstream file_est_dist_ang_y(pkg_loc + "/data/est_dist_ang_y.txt");
+    file_est_dist_ang_y << "";
+    file_est_dist_ang_y.close();
+    ofstream file_est_dist_ang_z(pkg_loc + "/data/est_dist_ang_z.txt");
+    file_est_dist_ang_z << "";
+    file_est_dist_ang_z.close();
+}
+
+
+void passivity_based_controller::log_data(){
+	cout << "logging" << endl;
+	std::string pkg_loc = ros::package::getPath("fsr_pkg");
+
+	ofstream file_x(pkg_loc + "/data/pos_x.txt",std::ios_base::app);
+	file_x << _p_b(0) <<endl;
+	file_x.close();
+	ofstream file_y(pkg_loc + "/data/pos_y.txt",std::ios_base::app);
+	file_y << _p_b(1) <<endl;
+	file_y.close();
+	ofstream file_z(pkg_loc + "/data/pos_z.txt",std::ios_base::app);
+	file_z << _p_b(2) <<endl;
+	file_z.close();		
+	ofstream file_phi(pkg_loc + "/data/phi.txt",std::ios_base::app);
+	file_phi << _eta_b(0) <<endl;
+	file_phi.close();		
+	ofstream file_theta(pkg_loc + "/data/theta.txt",std::ios_base::app);
+	file_theta << _eta_b(1) <<endl;
+	file_theta.close();				
+	ofstream file_psi(pkg_loc + "/data/psi.txt",std::ios_base::app);
+	file_psi << _eta_b(2) <<endl;
+	file_psi.close();									
+
+	ofstream file_x_ref(pkg_loc + "/data/pos_x_ref.txt",std::ios_base::app);
+	file_x_ref << _pos_ref(0) <<endl;
+	file_x_ref.close();
+	ofstream file_y_ref(pkg_loc + "/data/pos_y_ref.txt",std::ios_base::app);
+	file_y_ref << _pos_ref(1) <<endl;
+	file_y_ref.close();
+	ofstream file_z_ref(pkg_loc + "/data/pos_z_ref.txt",std::ios_base::app);
+	file_z_ref << _pos_ref(2) <<endl;
+	file_z_ref.close();			
+	ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt",std::ios_base::app);
+	file_psi_ref << _eta_ref(2) <<endl;
+	file_psi_ref.close();	
+
+	ofstream file_x_err(pkg_loc + "/data/pos_x_err.txt",std::ios_base::app);
+	file_x_err << _p_b(0)-_pos_ref(0) <<endl;
+	file_x_err.close();
+	ofstream file_y_err(pkg_loc + "/data/pos_y_err.txt",std::ios_base::app);
+	file_y_err << _p_b(1)-_pos_ref(1) <<endl;
+	file_y_err.close();
+	ofstream file_z_err(pkg_loc + "/data/pos_z_err.txt",std::ios_base::app);
+	file_z_err << _p_b(2)-_pos_ref(2) <<endl;
+	file_z_err.close();			
+	ofstream file_psi_err(pkg_loc + "/data/psi_err.txt",std::ios_base::app);
+	file_psi_err << _eta_b(2)-_eta_ref(2) <<endl;
+	file_psi_err.close();		
+	
+	ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt",std::ios_base::app);
+	file_vel_x_err << _p_b_dot(0)-_pos_ref_dot(0) <<endl;
+	file_vel_x_err.close();
+	ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt",std::ios_base::app);
+	file_vel_y_err << _p_b_dot(1)-_pos_ref_dot(1) <<endl;
+	file_vel_y_err.close();
+	ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt",std::ios_base::app);
+	file_vel_z_err << _p_b_dot(2)-_pos_ref_dot(2) <<endl;
+	file_vel_z_err.close();			
+	ofstream file_vel_psi_err(pkg_loc + "/data/vel_psi_err.txt",std::ios_base::app);
+	file_vel_psi_err << _eta_b_dot(2)-_eta_ref_dot(2) <<endl;
+	file_vel_psi_err.close();		
+
+    ofstream file_uT(pkg_loc + "/data/uT.txt",std::ios_base::app);
+    file_uT << _u_T << endl;
+    file_uT.close();
+    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt",std::ios_base::app);
+    file_taub_x << _tau_b(0) << endl;
+    file_taub_x.close();
+    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt",std::ios_base::app);
+    file_taub_y << _tau_b(1) << endl;
+    file_taub_y.close();
+    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt",std::ios_base::app);
+    file_taub_z << _tau_b(2) <<endl;
+    file_taub_z.close();		
+
+    ofstream file_est_dist_lin_x(pkg_loc + "/data/est_dist_lin_x.txt",std::ios_base::app);
+    file_est_dist_lin_x << _est_dist_lin(0) << endl ;
+    file_est_dist_lin_x.close();
+    ofstream file_est_dist_lin_y(pkg_loc + "/data/est_dist_lin_y.txt",std::ios_base::app);
+    file_est_dist_lin_y << _est_dist_lin(1) << endl ;
+    file_est_dist_lin_y.close();
+    ofstream file_est_dist_lin_z(pkg_loc + "/data/est_dist_lin_z.txt",std::ios_base::app);
+    file_est_dist_lin_z << _est_dist_lin(2) << endl ;
+    file_est_dist_lin_z.close();
+
+    ofstream file_est_dist_ang_x(pkg_loc + "/data/est_dist_ang_x.txt",std::ios_base::app);
+    file_est_dist_ang_x << _est_dist_ang(0) << endl ;
+    file_est_dist_ang_x.close();
+    ofstream file_est_dist_ang_y(pkg_loc + "/data/est_dist_ang_y.txt",std::ios_base::app);
+    file_est_dist_ang_y << _est_dist_ang(1) << endl ;
+    file_est_dist_ang_y.close();
+    ofstream file_est_dist_ang_z(pkg_loc + "/data/est_dist_ang_z.txt",std::ios_base::app);
+    file_est_dist_ang_z << _est_dist_ang(2) << endl ;
+    file_est_dist_ang_z.close();
+
+}
+
 
 void passivity_based_controller::run() {
 	boost::thread ctrl_loop_t ( &passivity_based_controller::ctrl_loop, this);
