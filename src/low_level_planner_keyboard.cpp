@@ -84,6 +84,7 @@ low_level_planner::low_level_planner(){
 	_y0 = 0;
 	_z0 = -1;
 	_psi0 = 0;
+	_ttot = 20;
 
 }
 
@@ -159,16 +160,23 @@ void low_level_planner::low_level_planner_loop() {
 	int time_idx = 0;
 	std_msgs::Float64 msg;
 	while(ros::ok){
-		std::cout << "Insert x reference" << endl;
-		std::cin >> _xf;
-		std::cout << "Insert y reference" << endl;
-		std::cin >> _yf;
-		std::cout << "Insert z reference" << endl;
-		std::cin >> _zf;
-		std::cout << "Insert psi reference" << endl;
-		std::cin >> _psif;
-		std::cout << "Insert time length" << endl;
-		std::cin >> _ttot;
+//		std::cout << "Insert x reference" << endl;
+//		std::cin >> _xf;
+//		std::cout << "Insert y reference" << endl;
+//		std::cin >> _yf;
+//		std::cout << "Insert z reference" << endl;
+//		std::cin >> _zf;
+//		std::cout << "Insert psi reference" << endl;
+//		std::cin >> _psif;
+//		std::cout << "Insert time length" << endl;
+//		std::cin >> _ttot;
+
+		_xf = 2;
+		_yf = -1;
+		_zf = -5;
+		_psif = 1.57;
+		_ttot = 20;
+
 
 		init_trajectory(_ttot,_x0,_y0,_z0,_psi0,_xf,_yf,_zf,_psif);
 

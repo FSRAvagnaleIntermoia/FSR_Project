@@ -1,0 +1,52 @@
+<launch>
+      <arg name="mav_name" default="firefly"/>
+      <arg name="world_name" default="basic"/>
+      <arg name="enable_logging" default="false"/>
+      <arg name="enable_ground_truth" default="true"/>
+      <arg name="log_file" default="$(arg mav_name)"/>
+      <arg name="debug" default="false"/>
+      <arg name="gui" default="true"/>
+      <arg name="paused" default="false"/>
+      <!-- The following line causes gzmsg and gzerr messages to be printed to the console
+            (even when Gazebo is started through roslaunch) -->
+      <arg name="verbose" default="false"/>
+
+      <env name="GAZEBO_MODEL_PATH" value="${GAZEBO_MODEL_PATH}:$(find rotors_gazebo)/models"/>
+      <env name="GAZEBO_RESOURCE_PATH" value="${GAZEBO_RESOURCE_PATH}:$(find rotors_gazebo)/models"/>
+      <include file="$(find gazebo_ros)/launch/empty_world.launch">
+      <arg name="world_name" value="$(find rotors_gazebo)/worlds/$(arg world_name).world"/>
+      <arg name="debug" value="$(arg debug)" />
+      <arg name="paused" value="$(arg paused)" />
+      <arg name="gui" value="$(arg gui)" />
+      <arg name="verbose" value="$(arg verbose)"/>
+      </include>
+
+      <group ns="$(arg mav_name)">
+      <include file="$(find fsr_pkg)/launch/spawn_mav.launch">
+            <arg name="mav_name" value="$(arg mav_name)" />
+            <arg name="model" value="$(find rotors_description)/urdf/$(arg mav_name)_base.xacro" />
+            <arg name="enable_logging" value="$(arg enable_logging)" />
+            <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
+            <arg name="log_file" value="$(arg log_file)"/>
+      </include>
+      </group>
+
+            <param name="colonna_description" textfile="$(find fsr_pkg)/urdf/colonna.urdf" />              
+
+    <node name="hierarchical_controller" pkg="fsr_pkg" type="hierarchical_controller" output="screen" >
+    </node>   
+                  
+      <node name="spawn_traj" pkg="gazebo_ros" type="spawn_model"
+      args="-file $(find fsr_pkg)/urdf/trajectory.urdf -urdf 
+            -x 0.0
+            -y 0.0
+            -z 1.0
+            -R -0.2710229
+            -P 0.4372005
+            -Y -0.1171087
+            -model trajectory"
+      respawn="false" output="screen">
+      </node>    
+</launch>
+
+
