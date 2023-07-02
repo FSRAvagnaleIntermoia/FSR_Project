@@ -545,7 +545,7 @@ void hierarchical_controller::ctrl_loop() {
 			}
 				//FOR DATA LOGGING
 
-			if (_first_ref == true &&  _log_time < 60){
+			if (_first_ref == true &&  _log_time < 30){
 				log_data();			
 				_log_time = _log_time + Ts;	
 			}	
@@ -555,8 +555,8 @@ void hierarchical_controller::ctrl_loop() {
 
 		if (enable_disturbance){
 			geometry_msgs::Vector3 force , torque;
-			force.x = 0.2;
-			force.y = 0.3;
+			force.x = 0.1;
+			force.y = 0.15;
 			force.z = 0.0;
 			torque.x = 0.0;
 			torque.y = 0.0;

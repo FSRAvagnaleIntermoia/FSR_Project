@@ -131,7 +131,7 @@ class geometric_controller {
 		Eigen::Vector3d _tau_b;
 
 		double _log_time;	//for data log
-
+		double _psi;
 
 		bool _first_imu;
 		bool _first_odom;
@@ -185,7 +185,7 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 	_KR << 3 , 0 , 0 , 0 , 3 , 0 , 0 , 0 , 0.03;
 	_KW << 0.5 , 0 , 0 , 0 , 0.5 , 0 , 0 , 0 , 0.05;
 	_Ki = 0.2;
-	_Ki_R << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.1;
+	_Ki_R << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.005;
 
 	_Rb.setIdentity();
 	cout << _Rb << endl;
@@ -368,7 +368,7 @@ void geometric_controller::ctrl_loop() {
 
 
 		e_W = _omega_b_b - _Rb.transpose()*Rb_d*omega_b_b_ref;
-
+		e_int_R = e_int_R + e_R*Ts;
 
 
 
@@ -413,6 +413,7 @@ void geometric_controller::ctrl_loop() {
 
 			//FOR DATA LOGGING
 
+		_psi = atan2( _Rb(1,0) , _Rb(0,0) );
 		if (_first_ref == true &&  _log_time < 120){
 			log_data();			
 			_log_time = _log_time + Ts;	
@@ -454,6 +455,9 @@ void geometric_controller::empty_txt(){
     ofstream file_pos_z_ref(pkg_loc + "/data/pos_z_ref.txt");
     file_pos_z_ref << "";
     file_pos_z_ref.close();		
+    ofstream file_psi(pkg_loc + "/data/psi.txt");
+    file_psi << "";
+    file_psi.close();
 
     ofstream file_pos_x_err(pkg_loc + "/data/pos_x_err.txt");
     file_pos_x_err << "";
@@ -464,6 +468,9 @@ void geometric_controller::empty_txt(){
     ofstream file_pos_z_err(pkg_loc + "/data/pos_z_err.txt");
     file_pos_z_err << "";
     file_pos_z_err.close();		
+    ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt");
+    file_psi_ref << "";
+    file_psi_ref.close();				
 	
     ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt");
     file_vel_x_err << "";
@@ -525,6 +532,9 @@ void geometric_controller::log_data(){
 	ofstream file_z(pkg_loc + "/data/pos_z.txt",std::ios_base::app);
 	file_z << _p_b(2) <<endl;
 	file_z.close();							
+	ofstream file_psi(pkg_loc + "/data/psi.txt",std::ios_base::app);
+	file_psi << _psi <<endl;
+	file_psi.close();				
 
 	ofstream file_x_ref(pkg_loc + "/data/pos_x_ref.txt",std::ios_base::app);
 	file_x_ref << _pos_ref(0) <<endl;
@@ -535,6 +545,9 @@ void geometric_controller::log_data(){
 	ofstream file_z_ref(pkg_loc + "/data/pos_z_ref.txt",std::ios_base::app);
 	file_z_ref << _pos_ref(2) <<endl;
 	file_z_ref.close();			
+	ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt",std::ios_base::app);
+	file_psi_ref << _psi_ref <<endl;
+	file_psi_ref.close();	
 
 	ofstream file_x_err(pkg_loc + "/data/pos_x_err.txt",std::ios_base::app);
 	file_x_err << _p_b(0)-_pos_ref(0) <<endl;
@@ -545,7 +558,7 @@ void geometric_controller::log_data(){
 	ofstream file_z_err(pkg_loc + "/data/pos_z_err.txt",std::ios_base::app);
 	file_z_err << _p_b(2)-_pos_ref(2) <<endl;
 	file_z_err.close();			
-	
+
 	ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt",std::ios_base::app);
 	file_vel_x_err << _p_b_dot(0)-_pos_ref_dot(0) <<endl;
 	file_vel_x_err.close();
