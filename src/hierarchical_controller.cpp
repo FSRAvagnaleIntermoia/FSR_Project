@@ -33,10 +33,10 @@ const double Ts = 0.01;
 
 const double uncertainty = 1;
 const bool enable_estimator = 1;
-const bool enable_disturbance = 1;
+const bool enable_disturbance = 0;
 
 const double init_prop_speed = 546;
-const double takeoff_time = 2;
+const double takeoff_time = 3.5;
 
 
 
@@ -127,23 +127,18 @@ class hierarchical_controller {
 
 		double _mass;
 
-//		tf::Matrix3x3 _Kp;
-//		tf::Matrix3x3 _Ke;
-		Eigen::Matrix3d _Ke;
 		double _Kp;
 		double _Kp_dot;
-//		double _Ke;
-//		double _Ke_dot;
 		double _Ki;
-//		double _Ki_e;
 
+		Eigen::Matrix3d _Ke;
 		Eigen::Matrix3d _Ke_dot;
 		Eigen::Matrix3d _Ki_e;
 
 		double _c0; //estimator constant
 
 
-		double _u_T;
+		double _u_T;	//inputs
 		Eigen::Vector3d _tau_b;
 		double _log_time;	//for data log
 
@@ -360,7 +355,6 @@ bool applyWrench( const geometry_msgs::Wrench& wrench) {	//DISTURBANCE
 
 void hierarchical_controller::ctrl_loop() {	
 
-//G=k0^2/(k0+s)^2; transfer function for the estimator
 	ros::Rate rate(100);
     mav_msgs::Actuators act_msg;
     act_msg.angular_velocities.resize(motor_number);
@@ -417,7 +411,7 @@ void hierarchical_controller::ctrl_loop() {
 	while(ros::ok){
 
 		
-		if (enable_estimator){						//ESTIMATION
+		if (enable_estimator){						//ESTIMATION: -> G=k0^2/(k0+s)^2; transfer function for the estimator
 			q_lin = _mass*_p_b_dot;
 			q_ang = _M*_eta_b_dot;
 			
@@ -501,7 +495,6 @@ void hierarchical_controller::ctrl_loop() {
 
 			tau_tilde =  -_Ke*e_eta - _Ke_dot*e_eta_dot - _Ki_e*e_eta_int + _eta_ref_dot_dot;
 
-			Eigen::Vector3d _tau_b_real;
 			_tau_b = _Ib*_Q*tau_tilde + (_Q.transpose()).inverse()*_C*_eta_b_dot -(_Q.transpose()).inverse()*_est_dist_ang;
 
 
