@@ -1,0 +1,38 @@
+<?xml version='1.0'?>
+<sdf version='1.7'>
+  <model name='arrowmodel'>
+    <link name='link'>
+      <pose>0 0 0 0.0 -0 1.57</pose>
+      <self_collide>0</self_collide>
+      <enable_wind>0</enable_wind>
+      <kinematic>0</kinematic>
+      <visual name='visual'>
+        <geometry>
+          <polyline>
+            <point>3 0</point>
+            <point>0.6 -3</point>
+            <point>0.6 -1.6</point>
+            <point>-3 -1.6</point>
+            <point>-3 1.6</point>
+            <point>0.6 1.6</point>
+            <point>0.6 3</point>
+            <point>3 0</point>
+            <height>0.6</height>
+          </polyline>
+        </geometry>
+        <material>
+          <script>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+            <name>Gazebo/Red</name>
+          </script>
+          <shader type='pixel'/>
+        </material>
+        <pose>0 0 0 0 -0 0</pose>
+        <transparency>0</transparency>
+        <cast_shadows>1</cast_shadows>
+      </visual>
+    </link>
+    <static>1</static>
+    <allow_auto_disable>1</allow_auto_disable>
+  </model>
+</sdf>

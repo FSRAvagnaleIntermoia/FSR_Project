@@ -110,10 +110,22 @@
    args="-file $(find fsr_pkg)/urdf/goal.urdf -urdf 
          -x 5.0
          -y 7.0
-         -z 2.0
+         -z 4.0
          -model goal"
    respawn="false" output="screen">
   </node>    
+
+    <node name="spawn_total_force_arrow" pkg="gazebo_ros" type="spawn_model"
+   args="-file $(find fsr_pkg)/urdf/total_force_arrow.urdf -urdf 
+         -x 0.0
+         -y 0.0
+         -z -10.0
+         -model total_force_arrow"
+   respawn="false" output="screen">
+  </node>    
+
+
+
 
 
 </launch>

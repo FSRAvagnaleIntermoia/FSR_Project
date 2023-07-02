@@ -6,9 +6,13 @@
 #include "std_msgs/Float64.h"
 #include "std_msgs/Float64MultiArray.h"
 #include "geometry_msgs/Wrench.h"
+#include "gazebo_msgs/ModelState.h"
 #include <fstream>
 #include "ros/package.h"
-
+#include <ros/ros.h>
+#include <gazebo_msgs/ApplyBodyWrench.h>
+#include <geometry_msgs/Wrench.h>
+#include <geometry_msgs/Vector3.h>
 
 //Include tf libraries							
 #include "tf2_msgs/TFMessage.h"
@@ -28,8 +32,35 @@ const int motor_number = 6;
 const double Ts = 0.01;
 
 const double uncertainty = 1;
-const bool enable_estimator = 0;
+const bool enable_estimator = 1;
 
+	//TEST////////////
+bool applyWrench( const geometry_msgs::Wrench& wrench) {
+    ros::NodeHandle nh;
+    ros::ServiceClient applyWrenchClient = nh.serviceClient<gazebo_msgs::ApplyBodyWrench>("/gazebo/apply_body_wrench");
+    gazebo_msgs::ApplyBodyWrench srv;
+
+    srv.request.body_name = "firefly/base_link";
+    srv.request.reference_frame = "";
+    srv.request.reference_point.x = 0.0;
+    srv.request.reference_point.y = 0.0;
+    srv.request.reference_point.z = 0.0;
+    srv.request.wrench = wrench;
+    srv.request.start_time = ros::Time(0);
+    srv.request.duration = ros::Duration(0.01);
+
+    if (applyWrenchClient.call(srv) && srv.response.success)
+    {
+        ROS_INFO("Wrench applied successfully.");
+        return true;
+    }
+    else
+    {
+        ROS_ERROR("Failed to apply wrench.");
+        return false;
+    }
+}
+///////////
 
 
 class hierarchical_controller {
@@ -505,9 +536,31 @@ void hierarchical_controller::ctrl_loop() {
 
 		_act_pub.publish(act_msg);
 
+		// Create a wrench with the desired force and torque values
+		geometry_msgs::Vector3 force;
+		force.x = 10.0;
+		force.y = 0.0;
+		force.z = 0.0;
+
+		geometry_msgs::Vector3 torque;
+		torque.x = 0.0;
+		torque.y = 0.0;
+		torque.z = 0.0;
+
+		geometry_msgs::Wrench wrench;
+		wrench.force = force;
+		wrench.torque = torque;
+		applyWrench(wrench);
+
+
+
+
 		rate.sleep();		
 	}
 }
+
+
+
 
 
 

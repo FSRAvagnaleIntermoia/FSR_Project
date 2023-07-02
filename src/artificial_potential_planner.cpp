@@ -10,6 +10,8 @@
 #include "tf/transform_listener.h"
 #include "ros/package.h"
 #include <fstream>
+#include <gazebo_msgs/ModelState.h>
+#include <geometry_msgs/Pose.h>
 
 //const double Ts = 0.01;
 const int obstacle_array_size = 7;
@@ -38,8 +40,10 @@ class artificial_potential_planner {
 		Eigen::Vector3d repulsive_force_calc( double x_obs , double y_obs, double z_obs ,double eta_obs_i , double radius_obstacle);
 		
 
+
 		void empty_txt();
 		void log_data();
+		void setModelPose(const Eigen::Vector3d& force);
 
 	private:
 		ros::NodeHandle _nh;
@@ -73,6 +77,7 @@ class artificial_potential_planner {
 		Eigen::Vector3d _pos;	
 		Eigen::Vector3d _vel;	
 
+		 ros::Publisher _gazebo_pub;
 
 		Eigen::Vector3d p;
 		Eigen::Vector3d p_dot;	
@@ -114,6 +119,9 @@ artificial_potential_planner::artificial_potential_planner(){
 	_x_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_dot_dot_ref", 1);
 	_y_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_dot_dot_ref", 1);
 	_z_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_dot_ref", 1);
+
+    _gazebo_pub = _nh.advertise<gazebo_msgs::ModelState>("/gazebo/set_model_state", 1);
+
 
 	init_obstacles();
 
@@ -312,8 +320,8 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 			msg.data = p_dot_dot_f(2);
 			_z_dot_dot_pub.publish(msg);
 
-	//		cout << p_dot_dot << endl << endl;
-	//		cout << "p:" << p << endl << endl;
+
+		    setModelPose(p_dot);
 
 			log_data();
 
@@ -328,6 +336,57 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 	}
 }
 
+Eigen::Matrix3d skew(Eigen::Vector3d v){
+	Eigen::Matrix3d skew;
+	skew <<    0 , -v(2) , v(1),
+			 v(2) , 0   , -v(0),
+			-v(1) , v(0) ,    0;
+	return skew;
+}
+
+void artificial_potential_planner::setModelPose(const Eigen::Vector3d & force ) {
+ 	gazebo_msgs::ModelState stateMsg;
+		stateMsg.model_name = "total_force_arrow";
+		stateMsg.reference_frame = "world"; // Or any other reference frame you desire	
+	geometry_msgs::Pose pose;
+	if( force.norm() > 0.1){
+		Eigen::Vector3d x(1,0,0);
+		Eigen::Vector3d z;
+		z(0) = force(0);
+		z(1) = -force(1);
+		z(2) = -force(2);
+		z.normalize();
+		Eigen::Vector3d y = skew(z)*x;
+		y.normalize();
+		Eigen::Matrix3d R;
+		R.block<3,1>(0,0) = skew(y)*z; 
+		R.block<3,1>(0,1) = y;
+		R.block<3,1>(0,2) = z;
+
+		Eigen::Quaterniond quat(R);
+
+		pose.orientation.x = quat.x();
+		pose.orientation.y = quat.y();
+		pose.orientation.z = quat.z();
+		pose.orientation.w = quat.w();
+
+
+		pose.position.x = _pos(0);
+		pose.position.y = -_pos(1);
+		pose.position.z = -_pos(2);
+
+
+
+		stateMsg.pose = pose;
+		_gazebo_pub.publish(stateMsg);
+	}
+	else{
+		pose.position.z = -10;
+		stateMsg.pose = pose;
+		_gazebo_pub.publish(stateMsg);
+
+	}
+}
 
 void artificial_potential_planner::empty_txt(){
 
