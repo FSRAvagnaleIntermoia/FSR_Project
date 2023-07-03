@@ -40,30 +40,13 @@ const double takeoff_time = 3.5;
 
 
 
-class hierarchical_controller {
+class passivity_based_controller {
 	public:
-		hierarchical_controller();			
+		passivity_based_controller();			
 		void ctrl_loop();
-//		void estimator_loop();
         void run();
 
-
-
-
-		void x_ref_callback( std_msgs::Float64 msg);
-		void y_ref_callback( std_msgs::Float64 msg);
-		void z_ref_callback( std_msgs::Float64 msg);
-		void psi_ref_callback( std_msgs::Float64 msg);
-		void x_dot_ref_callback( std_msgs::Float64 msg);
-		void y_dot_ref_callback( std_msgs::Float64 msg);
-		void z_dot_ref_callback( std_msgs::Float64 msg);
-		void psi_dot_ref_callback( std_msgs::Float64 msg);
-		void x_dot_dot_ref_callback( std_msgs::Float64 msg);
-		void y_dot_dot_ref_callback( std_msgs::Float64 msg);
-		void z_dot_dot_ref_callback( std_msgs::Float64 msg);
-		void psi_dot_dot_ref_callback( std_msgs::Float64 msg);
-
-
+		void ref_callback(std_msgs::Float64MultiArray msg);
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
 
@@ -73,27 +56,12 @@ class hierarchical_controller {
 
 	private:
 		ros::NodeHandle _nh;
+
         ros::Subscriber _odom_sub;
         ros::Subscriber _imu_sub;
-
-		ros::Subscriber _x_sub;
-		ros::Subscriber _y_sub;
-		ros::Subscriber _z_sub;
-		ros::Subscriber _psi_sub;
-
-		ros::Subscriber _x_dot_sub;
-		ros::Subscriber _y_dot_sub;
-		ros::Subscriber _z_dot_sub;
-		ros::Subscriber _psi_dot_sub;
-
-		ros::Subscriber _x_dot_dot_sub;
-		ros::Subscriber _y_dot_dot_sub;
-		ros::Subscriber _z_dot_dot_sub;
-		ros::Subscriber _psi_dot_dot_sub;
-
+		ros::Subscriber _ref_sub;
 
         ros::Publisher _act_pub;
-        ros::Publisher _wrench_pub;
 
 		Eigen::Vector3d _pos_ref;
 		Eigen::Vector3d _eta_ref;
@@ -110,8 +78,6 @@ class hierarchical_controller {
 		Eigen::Matrix3d _Ib;
 		Eigen::Matrix3d _C;	
 		Eigen::Matrix3d _M;
-
-
 
 		Eigen::Matrix4Xd _allocation_matrix;
 
@@ -143,7 +109,6 @@ class hierarchical_controller {
 
 		double _c0; //estimator constant
 
-
 		double _u_T;	//inputs
 		Eigen::Vector3d _tau_b;
 		
@@ -157,26 +122,14 @@ class hierarchical_controller {
 
 
 
-hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref(0,0,0) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0){
+passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _eta_ref(0,0,0) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0){
 
-	_x_sub = _nh.subscribe("/firefly/planner/x_ref", 0, &hierarchical_controller::x_ref_callback, this);	
-	_y_sub = _nh.subscribe("/firefly/planner/y_ref", 0, &hierarchical_controller::y_ref_callback, this);	
-	_z_sub = _nh.subscribe("/firefly/planner/z_ref", 0, &hierarchical_controller::z_ref_callback, this);	
-	_psi_sub = _nh.subscribe("/firefly/planner/psi_ref", 0, &hierarchical_controller::psi_ref_callback, this);	
-	_x_dot_sub = _nh.subscribe("/firefly/planner/x_dot_ref", 0, &hierarchical_controller::x_dot_ref_callback, this);	
-	_y_dot_sub = _nh.subscribe("/firefly/planner/y_dot_ref", 0, &hierarchical_controller::y_dot_ref_callback, this);	
-	_z_dot_sub = _nh.subscribe("/firefly/planner/z_dot_ref", 0, &hierarchical_controller::z_dot_ref_callback, this);	
-	_psi_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_ref", 0, &hierarchical_controller::psi_dot_ref_callback, this);	
-	_x_dot_dot_sub = _nh.subscribe("/firefly/planner/x_dot_dot_ref", 0, &hierarchical_controller::x_dot_dot_ref_callback, this);	
-	_y_dot_dot_sub = _nh.subscribe("/firefly/planner/y_dot_dot_ref", 0, &hierarchical_controller::y_dot_dot_ref_callback, this);	
-	_z_dot_dot_sub = _nh.subscribe("/firefly/planner/z_dot_dot_ref", 0, &hierarchical_controller::z_dot_dot_ref_callback, this);	
-	_psi_dot_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_dot_ref", 0, &hierarchical_controller::psi_dot_dot_ref_callback, this);	
+	_ref_sub = _nh.subscribe("/low_level_planner/reference_trajectory", 0, &passivity_based_controller::ref_callback, this);	
 
-	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &hierarchical_controller::odom_callback, this);	
-	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &hierarchical_controller::imu_callback, this);	
+	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &passivity_based_controller::odom_callback, this);	
+	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &passivity_based_controller::imu_callback, this);	
 
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
-	_wrench_pub = _nh.advertise<geometry_msgs::Wrench>("/firefly/command/wrench", 1);
 
 
 	_allocation_matrix.resize(4,motor_number);
@@ -232,54 +185,24 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 	return skew;
 }
 
-
-void hierarchical_controller::x_ref_callback( std_msgs::Float64 msg){
-	_pos_ref[0] = msg.data;
+void passivity_based_controller::ref_callback( std_msgs::Float64MultiArray msg){
+	_pos_ref(0) = msg.data[0];
+	_pos_ref(1) = msg.data[1];
+	_pos_ref(2) = msg.data[2];
+	_eta_ref(2) = msg.data[3];	
+	_pos_ref_dot(0) = msg.data[4];
+	_pos_ref_dot(1) = msg.data[5];
+	_pos_ref_dot(2) = msg.data[6];
+	_eta_ref_dot(2) = msg.data[7];	
+	_pos_ref_dot_dot(0) = msg.data[8];
+	_pos_ref_dot_dot(1) = msg.data[9];
+	_pos_ref_dot_dot(2) = msg.data[10];
+	_eta_ref_dot_dot(2) = msg.data[11];		
 	_first_ref = true;
 }
-void hierarchical_controller::y_ref_callback( std_msgs::Float64 msg){
-	_pos_ref[1] = msg.data;
-}
-void hierarchical_controller::z_ref_callback( std_msgs::Float64 msg){
-	_pos_ref[2] = msg.data;
-}
-void hierarchical_controller::psi_ref_callback( std_msgs::Float64 msg){
-	_eta_ref[2] = msg.data;
-}
 
 
-
-void hierarchical_controller::x_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot[0] = msg.data;
-}
-void hierarchical_controller::y_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot[1] = msg.data;
-}
-void hierarchical_controller::z_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot[2] = msg.data;
-}
-void hierarchical_controller::psi_dot_ref_callback( std_msgs::Float64 msg){
-	_eta_ref_dot[2] = msg.data;
-}
-
-
-void hierarchical_controller::x_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot_dot[0] = msg.data;
-}
-void hierarchical_controller::y_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot_dot[1] = msg.data;
-}
-void hierarchical_controller::z_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot_dot[2] = msg.data;
-}
-void hierarchical_controller::psi_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_eta_ref_dot_dot[2] = msg.data;
-}
-
-
-
-
-void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
+void passivity_based_controller::odom_callback( nav_msgs::Odometry odom ) {
 
     Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world ENU frame
     Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body ENU frame
@@ -290,7 +213,7 @@ void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
 	_first_odom = true;
 }
 
-void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
+void passivity_based_controller::imu_callback ( sensor_msgs::Imu imu ){
 	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body ENU frame
 	 _omega_b_b = _R_enu2ned.transpose()*omega_b_b_enu;								     	//transform in NED body frane
 
@@ -365,7 +288,7 @@ bool applyWrench( const geometry_msgs::Wrench& wrench) {	//DISTURBANCE
 
 
 
-void hierarchical_controller::ctrl_loop() {	
+void passivity_based_controller::ctrl_loop() {	
 
 	ros::Rate rate(100);
     mav_msgs::Actuators act_msg;
@@ -406,8 +329,6 @@ void hierarchical_controller::ctrl_loop() {
 	eta_r_dot_dot.setZero();
 	v_eta.setZero();
 	
-
-
 	cout << "Waiting for sensors" << endl;
 	while( !(_first_imu && _first_odom) ) rate.sleep();
 
@@ -422,7 +343,7 @@ void hierarchical_controller::ctrl_loop() {
 	while(ros::ok){
 
 		
-		if (enable_estimator){						//ESTIMATION: -> G=k0^2/(k0+s)^2; transfer function for the estimator
+		if (enable_estimator){						//ESTIMATION: -> G=k0/(k0+s); transfer function for the estimator
 
 			q_lin = _mass*_p_b_dot;
 			q_ang = _M*_eta_b_dot;
@@ -436,8 +357,8 @@ void hierarchical_controller::ctrl_loop() {
 			_est_dist_lin = k0*(q_lin - q_lin_est);
 			_est_dist_ang = k0*(q_ang - q_ang_est);
 
-			cout << "_est_dist_lin: " << endl << _est_dist_lin << endl;
-			cout << "_est_dist_ang: " << endl << _est_dist_ang << endl << endl;
+		//	cout << "_est_dist_lin: " << endl << _est_dist_lin << endl;
+		//	cout << "_est_dist_ang: " << endl << _est_dist_ang << endl << endl;
 		}
 
 		if (time <= takeoff_time){						//TAKE OFF
@@ -447,7 +368,6 @@ void hierarchical_controller::ctrl_loop() {
 			_u_T = pow(init_prop_speed,2)*C_T*motor_number;
 			_act_pub.publish(act_msg);	
 		}
-		
 
 
 		if (time > takeoff_time){						//CONTROL LOOP
@@ -510,17 +430,6 @@ void hierarchical_controller::ctrl_loop() {
 
 			_tau_b = (_Q.transpose()).inverse()*(_M*eta_r_dot_dot + _C*eta_r_dot -_est_dist_ang -_D_o*v_eta - _K_o*e_eta  );
 
-
-		/*	geometry_msgs::Wrench wrench_msg;
-			wrench_msg.force.x = 0;
-			wrench_msg.force.y = 0;
-			wrench_msg.force.z = -_u_T;
-			wrench_msg.torque.x = _tau_b(0);
-			wrench_msg.torque.y = _tau_b(1);
-			wrench_msg.torque.z = _tau_b(2);
-			_wrench_pub.publish(wrench_msg);
-		
-		*/
 			phi_ref_old = phi_ref;
 			theta_ref_old = theta_ref;
 			phi_ref_dot_old = phi_ref_dot;
@@ -579,7 +488,7 @@ void hierarchical_controller::ctrl_loop() {
 }
 
 
-void hierarchical_controller::empty_txt(){
+void passivity_based_controller::empty_txt(){
 
     // "svuota" i file di testo
 
@@ -678,7 +587,7 @@ void hierarchical_controller::empty_txt(){
 }
 
 
-void hierarchical_controller::log_data(){
+void passivity_based_controller::log_data(){
 	cout << "logging" << endl;
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 
@@ -776,16 +685,16 @@ void hierarchical_controller::log_data(){
 }
 
 
-void hierarchical_controller::run() {
-	boost::thread ctrl_loop_t ( &hierarchical_controller::ctrl_loop, this);
+void passivity_based_controller::run() {
+	boost::thread ctrl_loop_t ( &passivity_based_controller::ctrl_loop, this);
 	ros::spin();	
 }
 
 
 
 int main(int argc, char** argv) {
-	ros::init(argc, argv, "hierarchical_controller");
-	hierarchical_controller hc;
+	ros::init(argc, argv, "passivity_based_controller");
+	passivity_based_controller hc;
 	hc.run();
 	return 0;
 }

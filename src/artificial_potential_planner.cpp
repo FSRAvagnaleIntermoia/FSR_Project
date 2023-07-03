@@ -4,6 +4,7 @@
 #include "sensor_msgs/Imu.h"
 #include "Eigen/Dense"
 #include "std_msgs/Float64.h"
+#include "std_msgs/Float64MultiArray.h"
 #include "boost/thread.hpp"
 //Include tf libraries							
 #include "tf2_msgs/TFMessage.h"
@@ -49,17 +50,7 @@ class artificial_potential_planner {
 		ros::NodeHandle _nh;
         ros::Subscriber _odom_sub;
 
-		ros::Publisher _x_pub;
-		ros::Publisher _y_pub;
-		ros::Publisher _z_pub;
-
-		ros::Publisher _x_dot_pub;
-		ros::Publisher _y_dot_pub;
-		ros::Publisher _z_dot_pub;
-
-		ros::Publisher _x_dot_dot_pub;
-		ros::Publisher _y_dot_dot_pub;
-		ros::Publisher _z_dot_dot_pub;
+		ros::Publisher _ref_pub;
 
 		Eigen::VectorXd _x_ref;
 		Eigen::VectorXd _y_ref;
@@ -108,18 +99,7 @@ artificial_potential_planner::artificial_potential_planner(){
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &artificial_potential_planner::odom_callback, this);	
 
 
-	_x_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_ref", 1);
-	_y_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_ref", 1);
-	_z_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_ref", 1);
-
-	_x_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_dot_ref", 1);
-	_y_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_dot_ref", 1);
-	_z_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_ref", 1);
-
-	_x_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_dot_dot_ref", 1);
-	_y_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_dot_dot_ref", 1);
-	_z_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_dot_ref", 1);
-
+	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
     _gazebo_pub = _nh.advertise<gazebo_msgs::ModelState>("/gazebo/set_model_state", 1);
 
 
@@ -229,21 +209,12 @@ Eigen::Vector3d artificial_potential_planner::repulsive_force_calc( double x_obs
 
 
 void artificial_potential_planner::stop_drone(){
-	std_msgs::Float64 msg;
+	std_msgs::Float64MultiArray msg;
+	msg.data = {_goal_pos(0) , _goal_pos(1) , _goal_pos(2) , 0 ,
+				0 , 0 , 0 , 0 ,
+				0 , 0 , 0 , 0 };
 
-	msg.data = _goal_pos(0);
-	_x_pub.publish(msg);
-	msg.data = _goal_pos(1);
-	_y_pub.publish(msg);
-	msg.data = _goal_pos(2);
-	_z_pub.publish(msg);
-	msg.data = 0;
-	_x_dot_pub.publish(msg);
-	_y_dot_pub.publish(msg);
-	_z_dot_pub.publish(msg);
-	_x_dot_dot_pub.publish(msg);
-	_y_dot_dot_pub.publish(msg);
-	_z_dot_dot_pub.publish(msg);
+	_ref_pub.publish(msg);
 }
 
 
@@ -260,7 +231,7 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 	p_dot_old.setZero();
 	p_dot_dot_old.setZero();
 	p_dot_dot_old_f.setZero();
-	std_msgs::Float64 msg;
+	std_msgs::Float64MultiArray msg;
 
 	Eigen::Vector3d attractive_force , total_repulsive_force;
 	bool finish = false;
@@ -298,27 +269,13 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 
 
 
+			msg.data = {p(0) , p(1) , p(2) , 0 ,
+						p_dot(0) , p_dot(1) , p_dot(2) , 0 ,
+						p_dot_dot_f(0) ,  p_dot_dot_f(1) ,  p_dot_dot_f(2) , 0};
 
-			msg.data = p(0);
-			_x_pub.publish(msg);
-			msg.data = p(1);
-			_y_pub.publish(msg);
-			msg.data = p(2);
-			_z_pub.publish(msg);
 
-			msg.data = p_dot(0);
-			_x_dot_pub.publish(msg);
-			msg.data = p_dot(1);
-			_y_dot_pub.publish(msg);
-			msg.data = p_dot(2);
-			_z_dot_pub.publish(msg);
-			
-			msg.data = p_dot_dot_f(0);
-			_x_dot_dot_pub.publish(msg);
-			msg.data = p_dot_dot_f(1);
-			_y_dot_dot_pub.publish(msg);
-			msg.data = p_dot_dot_f(2);
-			_z_dot_dot_pub.publish(msg);
+			_ref_pub.publish(msg);
+
 
 
 		    setModelPose(p_dot);

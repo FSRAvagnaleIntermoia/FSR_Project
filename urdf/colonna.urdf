@@ -19,6 +19,6 @@
     </collision>
   </link>
   <gazebo reference="colonna_link">
-    <material>Gazebo/Green</material>
+    <material>Gazebo/Black</material>
   </gazebo>
 </robot>

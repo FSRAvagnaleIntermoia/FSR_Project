@@ -18,7 +18,6 @@
 using namespace std;
 
 const double gravity = 9.8;
-const double _mass = 1.56779;
 const double Ixx = 0.0347563;
 const double Iyy = 0.0458929;
 const double Izz = 0.0977;
@@ -36,22 +35,7 @@ class geometric_controller {
 		void ctrl_loop();
         void run();
 
-		void x_ref_callback( std_msgs::Float64 msg);
-		void y_ref_callback( std_msgs::Float64 msg);
-		void z_ref_callback( std_msgs::Float64 msg);
-		void psi_ref_callback( std_msgs::Float64 msg);
-		void x_dot_ref_callback( std_msgs::Float64 msg);
-		void y_dot_ref_callback( std_msgs::Float64 msg);
-		void z_dot_ref_callback( std_msgs::Float64 msg);
-		void psi_dot_ref_callback( std_msgs::Float64 msg);
-		void x_dot_dot_ref_callback( std_msgs::Float64 msg);
-		void y_dot_dot_ref_callback( std_msgs::Float64 msg);
-		void z_dot_dot_ref_callback( std_msgs::Float64 msg);
-		void psi_dot_dot_ref_callback( std_msgs::Float64 msg);
-
-
-
-
+		void ref_callback(std_msgs::Float64MultiArray msg);
 
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
@@ -62,28 +46,12 @@ class geometric_controller {
 
 	private:
 		ros::NodeHandle _nh;
+
         ros::Subscriber _odom_sub;
-        ros::Subscriber _imu_sub;
-
-		ros::Subscriber _x_sub;
-		ros::Subscriber _y_sub;
-		ros::Subscriber _z_sub;
-		ros::Subscriber _psi_sub;
-
-		ros::Subscriber _x_dot_sub;
-		ros::Subscriber _y_dot_sub;
-		ros::Subscriber _z_dot_sub;
-		ros::Subscriber _psi_dot_sub;
-
-		ros::Subscriber _x_dot_dot_sub;
-		ros::Subscriber _y_dot_dot_sub;
-		ros::Subscriber _z_dot_dot_sub;
-		ros::Subscriber _psi_dot_dot_sub;
-
-
+        ros::Subscriber _imu_sub;	
+		ros::Subscriber _ref_sub;
 
         ros::Publisher _act_pub;
-        ros::Publisher _wrench_pub;
 
 		Eigen::Vector3d _pos_ref;
 		Eigen::Vector3d	_pos_ref_dot;
@@ -143,24 +111,12 @@ class geometric_controller {
 
 geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , _pos_ref_dot(0,0,0) , _psi_ref_dot(0), _pos_ref_dot_dot(0,0,0) , _psi_ref_dot_dot(0) {
 
-	_x_sub = _nh.subscribe("/firefly/planner/x_ref", 0, &geometric_controller::x_ref_callback, this);	
-	_y_sub = _nh.subscribe("/firefly/planner/y_ref", 0, &geometric_controller::y_ref_callback, this);	
-	_z_sub = _nh.subscribe("/firefly/planner/z_ref", 0, &geometric_controller::z_ref_callback, this);	
-	_psi_sub = _nh.subscribe("/firefly/planner/psi_ref", 0, &geometric_controller::psi_ref_callback, this);	
-	_x_dot_sub = _nh.subscribe("/firefly/planner/x_dot_ref", 0, &geometric_controller::x_dot_ref_callback, this);	
-	_y_dot_sub = _nh.subscribe("/firefly/planner/y_dot_ref", 0, &geometric_controller::y_dot_ref_callback, this);	
-	_z_dot_sub = _nh.subscribe("/firefly/planner/z_dot_ref", 0, &geometric_controller::z_dot_ref_callback, this);	
-	_psi_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_ref", 0, &geometric_controller::psi_dot_ref_callback, this);	
-	_x_dot_dot_sub = _nh.subscribe("/firefly/planner/x_dot_dot_ref", 0, &geometric_controller::x_dot_dot_ref_callback, this);	
-	_y_dot_dot_sub = _nh.subscribe("/firefly/planner/y_dot_dot_ref", 0, &geometric_controller::y_dot_dot_ref_callback, this);	
-	_z_dot_dot_sub = _nh.subscribe("/firefly/planner/z_dot_dot_ref", 0, &geometric_controller::z_dot_dot_ref_callback, this);	
-	_psi_dot_dot_sub = _nh.subscribe("/firefly/planner/psi_dot_dot_ref", 0, &geometric_controller::psi_dot_dot_ref_callback, this);	
+	_ref_sub = _nh.subscribe("/low_level_planner/reference_trajectory", 0, &geometric_controller::ref_callback, this);	
 
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &geometric_controller::odom_callback, this);	
 	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &geometric_controller::imu_callback, this);	
 
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
-	_wrench_pub = _nh.advertise<geometry_msgs::Wrench>("/firefly/command/wrench", 1);
 
 
 	_allocation_matrix.resize(4,motor_number);
@@ -180,12 +136,13 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 	_mass = _mass * uncertainty;
 	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
 	_Ib = _Ib * uncertainty;
+
 	_Kp = 10;
 	_Kv = 10;
 	_KR << 3 , 0 , 0 , 0 , 3 , 0 , 0 , 0 , 0.03;
 	_KW << 0.5 , 0 , 0 , 0 , 0.5 , 0 , 0 , 0 , 0.05;
 	_Ki = 0.2;
-	_Ki_R << 0.1 , 0 , 0 , 0 , 0.1 , 0 , 0 , 0 , 0.005;
+	_Ki_R << 0.01 , 0 , 0 , 0 , 0.01 , 0 , 0 , 0 , 0.005;
 
 	_Rb.setIdentity();
 	cout << _Rb << endl;
@@ -208,49 +165,21 @@ Eigen::Vector3d v_operator( Eigen::Matrix3d skew_matrix ){
 	return v;
 }
 
-void geometric_controller::x_ref_callback( std_msgs::Float64 msg){
+void geometric_controller::ref_callback( std_msgs::Float64MultiArray msg){
+	_pos_ref(0) = msg.data[0];
+	_pos_ref(1) = msg.data[1];
+	_pos_ref(2) = msg.data[2];
+	_psi_ref = msg.data[3];	
+	_pos_ref_dot(0) = msg.data[4];
+	_pos_ref_dot(1) = msg.data[5];
+	_pos_ref_dot(2) = msg.data[6];
+	_psi_ref_dot = msg.data[7];	
+	_pos_ref_dot_dot(0) = msg.data[8];
+	_pos_ref_dot_dot(1) = msg.data[9];
+	_pos_ref_dot_dot(2) = msg.data[10];
+	_psi_ref_dot_dot = msg.data[11];		
 	_first_ref = true;
-	_pos_ref[0] = msg.data;
 }
-void geometric_controller::y_ref_callback( std_msgs::Float64 msg){
-	_pos_ref[1] = msg.data;
-}
-void geometric_controller::z_ref_callback( std_msgs::Float64 msg){
-	_pos_ref[2] = msg.data;
-}
-void geometric_controller::psi_ref_callback( std_msgs::Float64 msg){
-	_psi_ref = msg.data;
-}
-
-
-
-void geometric_controller::x_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot[0] = msg.data;
-}
-void geometric_controller::y_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot[1] = msg.data;
-}
-void geometric_controller::z_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot[2] = msg.data;
-}
-void geometric_controller::psi_dot_ref_callback( std_msgs::Float64 msg){
-	_psi_ref_dot = msg.data;
-}
-
-
-void geometric_controller::x_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot_dot[0] = msg.data;
-}
-void geometric_controller::y_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot_dot[1] = msg.data;
-}
-void geometric_controller::z_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_pos_ref_dot_dot[2] = msg.data;
-}
-void geometric_controller::psi_dot_dot_ref_callback( std_msgs::Float64 msg){
-	_psi_ref_dot_dot = msg.data;
-}
-
 
 
 
@@ -390,8 +319,6 @@ void geometric_controller::ctrl_loop() {
 		wrench_msg.torque.x = _tau_b[0];
 		wrench_msg.torque.y = _tau_b[1];
 		wrench_msg.torque.z = _tau_b[2];
-
-		_wrench_pub.publish(wrench_msg);
 
 		control_input[0] = _u_T;
 		control_input[1] = _tau_b[0];

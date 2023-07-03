@@ -13,8 +13,8 @@
 #include <fstream>
 #include "ros/package.h"
 //const double Ts = 0.01;
-const int obstacle_array_size = 7;
 
+const int obstacle_array_size = 7;
 
 using namespace std;
 
@@ -72,11 +72,11 @@ rrt_planner::rrt_planner(){
 	_goal_pos[1] = -7;
 	_goal_pos[2] = -2;
 
-	_waypoint_pub = _nh.advertise<std_msgs::Float64MultiArray>("/firefly/planner/waypoints", 1);
+	_waypoint_pub = _nh.advertise<std_msgs::Float64MultiArray>("/high_level_planner/waypoints", 1);
 
 	init_obstacles();
 
-	_delta = 2;
+	_delta = 5;
 	_iter_number = 10;
 
 	_xmin = 0;
@@ -384,6 +384,7 @@ void rrt_planner::rrt_planner_loop(){
 
 //	srand (time(NULL));
 	srand(2022);
+//	srand(1);
 
 
 	while(ros::ok()){

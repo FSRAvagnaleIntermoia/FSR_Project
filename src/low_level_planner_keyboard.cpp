@@ -4,6 +4,7 @@
 #include "sensor_msgs/Imu.h"
 #include "Eigen/Dense"
 #include "std_msgs/Float64.h"
+#include "std_msgs/Float64MultiArray.h"
 #include "boost/thread.hpp"
 
 const double Ts = 0.01;
@@ -24,20 +25,7 @@ class low_level_planner {
 	private:
 		ros::NodeHandle _nh;
 
-		ros::Publisher _x_pub;
-		ros::Publisher _y_pub;
-		ros::Publisher _z_pub;
-		ros::Publisher _psi_pub;
-
-		ros::Publisher _x_dot_pub;
-		ros::Publisher _y_dot_pub;
-		ros::Publisher _z_dot_pub;
-		ros::Publisher _psi_dot_pub;
-
-		ros::Publisher _x_dot_dot_pub;
-		ros::Publisher _y_dot_dot_pub;
-		ros::Publisher _z_dot_dot_pub;
-		ros::Publisher _psi_dot_dot_pub;
+		ros::Publisher _ref_pub;
 
 		Eigen::VectorXd _x_ref;
 		Eigen::VectorXd _y_ref;
@@ -65,21 +53,7 @@ class low_level_planner {
 
 low_level_planner::low_level_planner(){
 
-	_x_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_ref", 1);
-	_y_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_ref", 1);
-	_z_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_ref", 1);
-	_psi_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/psi_ref", 1);
-
-	_x_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_dot_ref", 1);
-	_y_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_dot_ref", 1);
-	_z_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_ref", 1);
-	_psi_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/psi_dot_ref", 1);
-
-	_x_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_dot_dot_ref", 1);
-	_y_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_dot_dot_ref", 1);
-	_z_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_dot_ref", 1);
-	_psi_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/psi_dot_dot_ref", 1);
-
+	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
 	_x0 = 0;
 	_y0 = 0;
 	_z0 = -1;
@@ -156,71 +130,49 @@ void low_level_planner::ref_var_filler( Eigen::VectorXd & var_ref, Eigen::Vector
 
 
 void low_level_planner::low_level_planner_loop() {	
-	ros::Rate rate(100);
 	int time_idx = 0;
-	std_msgs::Float64 msg;
+	std_msgs::Float64MultiArray msg;
+	ros::Rate rate(100);
 	while(ros::ok){
-//		std::cout << "Insert x reference" << endl;
-//		std::cin >> _xf;
-//		std::cout << "Insert y reference" << endl;
-//		std::cin >> _yf;
-//		std::cout << "Insert z reference" << endl;
-//		std::cin >> _zf;
-//		std::cout << "Insert psi reference" << endl;
-//		std::cin >> _psif;
-//		std::cout << "Insert time length" << endl;
-//		std::cin >> _ttot;
+		std::cout << "Insert x reference" << endl;
+		std::cin >> _xf;
+		std::cout << "Insert y reference" << endl;
+		std::cin >> _yf;
+		std::cout << "Insert z reference" << endl;
+		std::cin >> _zf;
+		std::cout << "Insert psi reference" << endl;
+		std::cin >> _psif;
+		std::cout << "Insert time length" << endl;
+		std::cin >> _ttot;
 
-		_xf = 2;
-		_yf = -1;
-		_zf = -5;
-		_psif = 1.57;
-		_ttot = 20;
+//		_xf = 2;
+//		_yf = -1;
+//		_zf = -5;
+//		_psif = 1.57;
+//		_ttot = 20;
 
 
 		init_trajectory(_ttot,_x0,_y0,_z0,_psi0,_xf,_yf,_zf,_psif);
 
 
 		while (time_idx < _time_len){
-			msg.data = _x_ref(time_idx);
-			_x_pub.publish(msg);
-			msg.data = _y_ref(time_idx);
-			_y_pub.publish(msg);
-			msg.data = _z_ref(time_idx);
-			_z_pub.publish(msg);
-			msg.data = _psi_ref(time_idx);
-			_psi_pub.publish(msg);
 
-			msg.data = _x_ref_dot(time_idx);
-			_x_dot_pub.publish(msg);
-			msg.data = _y_ref_dot(time_idx);
-			_y_dot_pub.publish(msg);
-			msg.data = _z_ref_dot(time_idx);
-			_z_dot_pub.publish(msg);
-			msg.data = _psi_ref_dot(time_idx);
-			_psi_dot_pub.publish(msg);
-			
-			msg.data = _x_ref_dot_dot(time_idx);
-			_x_dot_dot_pub.publish(msg);
-			msg.data = _y_ref_dot_dot(time_idx);
-			_y_dot_dot_pub.publish(msg);
-			msg.data = _z_ref_dot_dot(time_idx);
-			_z_dot_dot_pub.publish(msg);
-			msg.data = _psi_ref_dot_dot(time_idx);
-			_psi_dot_dot_pub.publish(msg);
-			
+			msg.data = { _x_ref(time_idx) , _y_ref(time_idx) , _z_ref(time_idx) , _psi_ref(time_idx) , 
+						 _x_ref_dot(time_idx) , _y_ref_dot(time_idx) , _z_ref_dot(time_idx) , _psi_ref_dot(time_idx) , 
+						  _x_ref_dot_dot(time_idx) , _y_ref_dot_dot(time_idx) , _z_ref_dot_dot(time_idx) , _psi_ref_dot_dot(time_idx) };
+
+			_ref_pub.publish(msg);
+
 			time_idx ++;	
-			rate.sleep();		
+			usleep(10000);	
 		}
+
 		_x0 = _xf;
 		_y0 = _yf;
 		_z0 = _zf;
 		_psi0 = _psif;
 		
-
-
 		time_idx = 0;
-
 
 	}
 }

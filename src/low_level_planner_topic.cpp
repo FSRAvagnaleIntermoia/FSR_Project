@@ -27,20 +27,7 @@ class low_level_planner {
 	private:
 		ros::NodeHandle _nh;
 
-		ros::Publisher _x_pub;
-		ros::Publisher _y_pub;
-		ros::Publisher _z_pub;
-		ros::Publisher _psi_pub;
-
-		ros::Publisher _x_dot_pub;
-		ros::Publisher _y_dot_pub;
-		ros::Publisher _z_dot_pub;
-		ros::Publisher _psi_dot_pub;
-
-		ros::Publisher _x_dot_dot_pub;
-		ros::Publisher _y_dot_dot_pub;
-		ros::Publisher _z_dot_dot_pub;
-		ros::Publisher _psi_dot_dot_pub;
+		ros::Publisher _ref_pub;
 
 		ros::Subscriber _waypoint_sub;
 
@@ -76,22 +63,9 @@ class low_level_planner {
 
 low_level_planner::low_level_planner(){
 
-	_x_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_ref", 1);
-	_y_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_ref", 1);
-	_z_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_ref", 1);
-	_psi_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/psi_ref", 1);
+	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
 
-	_x_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_dot_ref", 1);
-	_y_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_dot_ref", 1);
-	_z_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_ref", 1);
-	_psi_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/psi_dot_ref", 1);
-
-	_x_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/x_dot_dot_ref", 1);
-	_y_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/y_dot_dot_ref", 1);
-	_z_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/z_dot_dot_ref", 1);
-	_psi_dot_dot_pub = _nh.advertise<std_msgs::Float64>("/firefly/planner/psi_dot_dot_ref", 1);
-
-	_waypoint_sub = _nh.subscribe("/firefly/planner/waypoints", 0, &low_level_planner::waypoint_callback, this);	
+	_waypoint_sub = _nh.subscribe("/high_level_planner/waypoints", 0, &low_level_planner::waypoint_callback, this);	
 
 	_ttot = 5;
 	_x0 = 0;
@@ -104,7 +78,6 @@ low_level_planner::low_level_planner(){
 }
 
 void low_level_planner::waypoint_callback(std_msgs::Float64MultiArray msg){
-	cout << "callback " << endl;
 	 _n_waypoints = msg.layout.dim[0].size;
 	_waypoints.resize(3,_n_waypoints);
 	for (int i = 0 ; i < _n_waypoints ; i++ ){
@@ -113,8 +86,6 @@ void low_level_planner::waypoint_callback(std_msgs::Float64MultiArray msg){
 		_waypoints(2,i) = msg.data[3*i+2];
 	}
 	_first_waypoint  = true;
-	cout << "end callback " << endl;
-
 }
 
 void low_level_planner::init_trajectory(double ttot , double x0, double y0, double z0, double psi0, double xf, double yf, double zf, double psif ){
@@ -187,7 +158,7 @@ void low_level_planner::ref_var_filler( Eigen::VectorXd & var_ref, Eigen::Vector
 void low_level_planner::low_level_planner_loop() {	
 	ros::Rate rate(100);
 	int time_idx = 0;
-	std_msgs::Float64 msg;
+	std_msgs::Float64MultiArray msg;
 
 	while(ros::ok){
 
@@ -207,36 +178,15 @@ void low_level_planner::low_level_planner_loop() {
 			init_trajectory(_ttot,_x0,_y0,_z0,_psi0,_xf,_yf,_zf,_psif);
 
 			while (time_idx < _time_len){
-				msg.data = _x_ref(time_idx);
-				_x_pub.publish(msg);
-				msg.data = _y_ref(time_idx);
-				_y_pub.publish(msg);
-				msg.data = _z_ref(time_idx);
-				_z_pub.publish(msg);
-				msg.data = _psi_ref(time_idx);
-				_psi_pub.publish(msg);
+				msg.data = { _x_ref(time_idx) , _y_ref(time_idx) , _z_ref(time_idx) , _psi_ref(time_idx) , 
+							_x_ref_dot(time_idx) , _y_ref_dot(time_idx) , _z_ref_dot(time_idx) , _psi_ref_dot(time_idx) , 
+							_x_ref_dot_dot(time_idx) , _y_ref_dot_dot(time_idx) , _z_ref_dot_dot(time_idx) , _psi_ref_dot_dot(time_idx) };
+				_ref_pub.publish(msg);
 
-				msg.data = _x_ref_dot(time_idx);
-				_x_dot_pub.publish(msg);
-				msg.data = _y_ref_dot(time_idx);
-				_y_dot_pub.publish(msg);
-				msg.data = _z_ref_dot(time_idx);
-				_z_dot_pub.publish(msg);
-				msg.data = _psi_ref_dot(time_idx);
-				_psi_dot_pub.publish(msg);
-				
-				msg.data = _x_ref_dot_dot(time_idx);
-				_x_dot_dot_pub.publish(msg);
-				msg.data = _y_ref_dot_dot(time_idx);
-				_y_dot_dot_pub.publish(msg);
-				msg.data = _z_ref_dot_dot(time_idx);
-				_z_dot_dot_pub.publish(msg);
-				msg.data = _psi_ref_dot_dot(time_idx);
-				_psi_dot_dot_pub.publish(msg);
-				
 				time_idx ++;	
-				rate.sleep();		
+				usleep(10000);	
 			}
+
 
 			_x0 = _xf;
 			_y0 = _yf;
