@@ -32,7 +32,8 @@ https://github.com/FSRAvagnaleIntermoia/FSR_Project/assets/80157936/ae0ff550-546
 
 With hierarchical controller
 
-https://github.com/FSRAvagnaleIntermoia/FSR_Project/assets/80157936/79433946-0f29-4f77-89bd-eb5ca756aa80
+https://github.com/FSRAvagnaleIntermoia/FSR_Project/assets/80157936/d8115caf-967b-4b00-9c48-45e4853105fb
+
 
 
 
