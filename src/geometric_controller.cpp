@@ -8,11 +8,7 @@
 #include "geometry_msgs/Wrench.h"
 #include <fstream>
 #include "ros/package.h"
-
-
-//Include tf libraries							
-#include "tf2_msgs/TFMessage.h"
-#include "tf/transform_listener.h"
+#include "boost/thread.hpp"
 
 
 using namespace std;
@@ -27,7 +23,12 @@ const double arm_length = 0.215;
 const int motor_number = 6;
 const double Ts = 0.01;
 
-const double uncertainty = 1;
+const double uncertainty = 1;		//multiplicative uncertainty
+const bool enable_estimator = 0;
+const bool enable_disturbance = 0;
+
+const double init_prop_speed = 545.1;	//motor speed during take off phase
+const double takeoff_time = 5;		
 
 class geometric_controller {
 	public:
@@ -36,7 +37,6 @@ class geometric_controller {
         void run();
 
 		void ref_callback(std_msgs::Float64MultiArray msg);
-
         void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
 
@@ -57,49 +57,44 @@ class geometric_controller {
 		Eigen::Vector3d	_pos_ref_dot;
 		Eigen::Vector3d	_pos_ref_dot_dot;
 
+		double _psi;					// yaw extracted from rotation matrix
 		double _psi_ref;
 		double _psi_ref_dot;
 		double _psi_ref_dot_dot;
 
-		Eigen::Matrix3d _Rb;
-	    Eigen::Matrix3d _R_enu2ned;
+		Eigen::Matrix3d _Rb;			//expresses body orientation in world frame
+	    Eigen::Matrix3d _R_enu2ned;		//to transform from ENU to NED frames
+
 
 		Eigen::Matrix3d _Ib;
 
 		Eigen::Matrix4Xd _allocation_matrix;
 
-		Eigen::Vector3d _omega_b_b;
-		Eigen::Vector3d _p_b;
-		Eigen::Vector3d _p_b_dot;
+		Eigen::Vector3d _omega_b_b;		//angular velocity expressed in body NED frame
+		Eigen::Vector3d _p_b;			//position expressed in world NED frame
+		Eigen::Vector3d _p_b_dot;		//velocity expressed in world NED frame
+
 
 		double _mass;
 	
-
-
-//		tf::Matrix3x3 _Kp;
-//		tf::Matrix3x3 _Ke;
-		Eigen::Matrix3d _KR;
-		double _Kp;
+		double _Kp;				//gains of the outer loop (equivalent to diagonal matrices)
 		double _Kv;
-//		double _Ke;
-//		double _Ke_dot;
 		double _Ki;
-//		double _Ki_e;
 
-
+		Eigen::Matrix3d _KR;	 //gains of the inner loop
 		Eigen::Matrix3d _KW;
 		Eigen::Matrix3d _Ki_R;
 
 
 
-		double _u_T;
-		Eigen::Vector3d e_R;
-		Eigen::Vector3d e_W;
-
+		double _u_T;			//control inputs
 		Eigen::Vector3d _tau_b;
 
+		Eigen::Vector3d e_R;	//orientation errors
+		Eigen::Vector3d e_W;
+
+
 		double _log_time;	//for data log
-		double _psi;
 
 		bool _first_imu;
 		bool _first_odom;
@@ -108,18 +103,17 @@ class geometric_controller {
 };
 
 
-
+//sets initial position reference to [0,0,1]'
 geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , _pos_ref_dot(0,0,0) , _psi_ref_dot(0), _pos_ref_dot_dot(0,0,0) , _psi_ref_dot_dot(0) {
 
 	_ref_sub = _nh.subscribe("/low_level_planner/reference_trajectory", 0, &geometric_controller::ref_callback, this);	
-
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &geometric_controller::odom_callback, this);	
 	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &geometric_controller::imu_callback, this);	
 
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
 
 
-	_allocation_matrix.resize(4,motor_number);
+	_allocation_matrix.resize(4,motor_number);		//4x6 allocation matrix
 	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
 						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
 						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
@@ -129,11 +123,13 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 	_first_imu = false;
 	_first_odom = false;
 	_control_on = false;
+	
+	//parameter initialization
 
  	_R_enu2ned << 1,0,0,0,-1,0,0,0,-1; 
 
 	_mass = 1.56779;
-	_mass = _mass * uncertainty;
+	_mass = _mass * uncertainty;		//multiplicative uncertainty for mass and inertia matrix
 	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
 	_Ib = _Ib * uncertainty;
 
@@ -145,11 +141,11 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 	_Ki_R << 0.01 , 0 , 0 , 0 , 0.01 , 0 , 0 , 0 , 0.005;
 
 	_Rb.setIdentity();
-	cout << _Rb << endl;
-	_log_time = 0;
-	empty_txt();
-}
+	
 
+	empty_txt();
+	_log_time = 0;
+}
 
 Eigen::Matrix3d skew(Eigen::Vector3d v){
 	Eigen::Matrix3d skew;
@@ -166,6 +162,7 @@ Eigen::Vector3d v_operator( Eigen::Matrix3d skew_matrix ){
 }
 
 void geometric_controller::ref_callback( std_msgs::Float64MultiArray msg){
+	//reads position, velocity and acceleration reference values for x,y,z,psi
 	_pos_ref(0) = msg.data[0];
 	_pos_ref(1) = msg.data[1];
 	_pos_ref(2) = msg.data[2];
@@ -184,23 +181,24 @@ void geometric_controller::ref_callback( std_msgs::Float64MultiArray msg){
 
 
 void geometric_controller::odom_callback( nav_msgs::Odometry odom ) {
-
-    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world ENU frame
-    Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body ENU frame
+	//reads position and linear velocity
+    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world-ENU frame
+    Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body-ENU frame
 	
-    _p_b = _R_enu2ned*pos_enu;							//transform in world NED frame
-	_p_b_dot = _Rb*_R_enu2ned*vel_b_enu;  				//transform in world NED frame (first in body NED then in world NED)	
+    _p_b = _R_enu2ned*pos_enu;							//transform in world-NED frame
+	_p_b_dot = _Rb*_R_enu2ned*vel_b_enu;  				//transform in world-NED frame (first in body-NED then in world-NED)	
 
 	_first_odom = true;
+
 }
 
 void geometric_controller::imu_callback ( sensor_msgs::Imu imu ){
-	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body ENU frame
-	 _omega_b_b = _R_enu2ned.transpose()*omega_b_b_enu;								     	//transform in NED body frane
+	//reads angular velocity and orientation
+	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body-ENU frame
+	_omega_b_b = _R_enu2ned*omega_b_b_enu;								     	//transform in body-NED frame
 	
 	Eigen::Quaterniond quat(imu.orientation.w,imu.orientation.x,imu.orientation.y,imu.orientation.z);
 	Eigen::Matrix3d R = quat.toRotationMatrix();
-
     _Rb = _R_enu2ned.transpose()*R*_R_enu2ned;
 	_first_imu = true;
 }
@@ -337,16 +335,14 @@ void geometric_controller::ctrl_loop() {
 		    	act_msg.angular_velocities[i] = 0;
 			}
 		}
-
-			//FOR DATA LOGGING
-
-		_psi = atan2( _Rb(1,0) , _Rb(0,0) );
-		if (_first_ref == true &&  _log_time < 120){
-			log_data();			
-			_log_time = _log_time + Ts;	
-		}	
-
-
+		/*	//for data logging
+			_psi = atan2( _Rb(1,0) , _Rb(0,0) );
+			if (_first_ref == true &&  _log_time < 60){
+				log_data();			
+				_log_time = _log_time + Ts;	
+			}	
+			cout << _log_time << endl;
+		*/
 		_act_pub.publish(act_msg);
 
 
@@ -356,11 +352,9 @@ void geometric_controller::ctrl_loop() {
 }
 
 
+//	for data logging //
 
 void geometric_controller::empty_txt(){
-
-    // "svuota" i file di testo
-
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 	
     ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
@@ -447,7 +441,7 @@ void geometric_controller::empty_txt(){
 
 
 void geometric_controller::log_data(){
-	cout << "logging" << endl;
+//	cout << "logging" << endl;
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 
 	ofstream file_x(pkg_loc + "/data/pos_x.txt",std::ios_base::app);
@@ -533,7 +527,7 @@ void geometric_controller::log_data(){
 
 
 void geometric_controller::run() {
-	boost::thread ctrl_loop_t ( &geometric_controller::ctrl_loop, this);
+	boost::thread ctrl_loop_t ( &geometric_controller::ctrl_loop, this);	//starts the control loop thread
 	ros::spin();	
 }
 

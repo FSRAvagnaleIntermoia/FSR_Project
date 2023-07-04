@@ -9,7 +9,6 @@
 #include "gazebo_msgs/ModelState.h"
 #include <fstream>
 #include "ros/package.h"
-#include <ros/ros.h>
 #include <gazebo_msgs/ApplyBodyWrench.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Vector3.h>
@@ -127,7 +126,7 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
 						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
 						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
-						C_Q,  -C_Q, C_Q,  -C_Q, C_Q, -C_Q;
+						C_Q, -C_Q, C_Q, -C_Q, C_Q, -C_Q;
 
 
 	_first_imu = false;
@@ -172,7 +171,7 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 	return skew;
 }
 
-void hierarchical_controller::ref_callback( std_msgs::Float64MultiArray msg){
+void hierarchical_controller::ref_callback( std_msgs::Float64MultiArray msg){	
 	//reads position, velocity and acceleration reference values for x,y,z,psi
 	_pos_ref(0) = msg.data[0];
 	_pos_ref(1) = msg.data[1];
@@ -204,7 +203,7 @@ void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
 void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 	//reads angular velocity and orientation
 	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body-ENU frame
-	_omega_b_b = _R_enu2ned*omega_b_b_enu;								     								//transform in body-NED frame
+	_omega_b_b = _R_enu2ned*omega_b_b_enu;								     	//transform in body-NED frame
 
 	double phi, theta, psi;
 	

@@ -9,7 +9,6 @@
 #include "gazebo_msgs/ModelState.h"
 #include <fstream>
 #include "ros/package.h"
-#include <ros/ros.h>
 #include <gazebo_msgs/ApplyBodyWrench.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Vector3.h>
