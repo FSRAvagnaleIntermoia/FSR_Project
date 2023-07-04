@@ -1,49 +1,42 @@
 #include "ros/ros.h"
-#include "mav_msgs/Actuators.h"
 #include "nav_msgs/Odometry.h"
-#include "sensor_msgs/Imu.h"
 #include "Eigen/Dense"
-#include "std_msgs/Float64.h"
 #include "std_msgs/Float64MultiArray.h"
 #include "boost/thread.hpp"
-//Include tf libraries							
-#include "tf2_msgs/TFMessage.h"
-#include "tf/transform_listener.h"
 #include "ros/package.h"
-#include <fstream>
 #include <gazebo_msgs/ModelState.h>
 #include <geometry_msgs/Pose.h>
-
-//const double Ts = 0.01;
-const int obstacle_array_size = 7;
-
+#include <fstream>
 
 using namespace std;
 
+const int obstacle_array_size = 7; 	// number of obstacles
+
+
 struct obstacle{
-	Eigen::Vector3d pos_obs;
-	double _eta_obs_i;
-	double radius;
+	Eigen::Vector3d pos_obs;		// center of the columns
+	double _eta_obs_i;				// range of influnce
+	double radius;					// radius of the columns
 };
 
 class artificial_potential_planner {
 	public:
 		artificial_potential_planner();	
+		void artificial_potential_planner_loop();	
+		void run();
 
-        void odom_callback( nav_msgs::Odometry odom );
+        void odom_callback( nav_msgs::Odometry odom );			
 
 		void init_obstacles();
 		void stop_drone();
 
-		void artificial_potential_planner_loop();	
-		void run();
 		Eigen::Vector3d attractive_force_calc();
 		Eigen::Vector3d repulsive_force_calc( double x_obs , double y_obs, double z_obs ,double eta_obs_i , double radius_obstacle);
 		
-
-
+		//for data logging		
 		void empty_txt();
 		void log_data();
+		//for graphics
 		void setModelPose(const Eigen::Vector3d& force);
 
 	private:
@@ -51,6 +44,8 @@ class artificial_potential_planner {
         ros::Subscriber _odom_sub;
 
 		ros::Publisher _ref_pub;
+		ros::Publisher _gazebo_pub;	//for graphics
+
 
 		Eigen::VectorXd _x_ref;
 		Eigen::VectorXd _y_ref;
@@ -66,19 +61,14 @@ class artificial_potential_planner {
 
 		Eigen::Vector3d _goal_pos;
 		Eigen::Vector3d _pos;	
-		Eigen::Vector3d _vel;	
 
-		 ros::Publisher _gazebo_pub;
 
 		Eigen::Vector3d p;
 		Eigen::Vector3d p_dot;	
 		Eigen::Vector3d p_dot_dot_f;			
 
-		obstacle obstacle_array[obstacle_array_size];
-
-		int _rate;
-
-
+		obstacle obstacle_array[obstacle_array_size]; //array of all obstacles
+		
 		double _Ka , _Kb , _K_obs , _eta_obs_i;
 };
 
@@ -86,23 +76,22 @@ class artificial_potential_planner {
 
 
 artificial_potential_planner::artificial_potential_planner(){
+	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &artificial_potential_planner::odom_callback, this);	
+
+	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
+    _gazebo_pub = _nh.advertise<gazebo_msgs::ModelState>("/gazebo/set_model_state", 1);
+
+	//initialize parameters
+
 	_goal_pos[0] = 5;
 	_goal_pos[1] = -7;
 	_goal_pos[2] = -2;
 
 	_Kb = 0.4;
-	_Ka = _Kb; //_Kb*2; 
+	_Ka = _Kb; 		//so that fa = fb when ||e|| = 1
 	_K_obs = 0.04;
 
-	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &artificial_potential_planner::odom_callback, this);	
-
-
-	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
-    _gazebo_pub = _nh.advertise<gazebo_msgs::ModelState>("/gazebo/set_model_state", 1);
-
-
 	init_obstacles();
-
 	empty_txt();
 }
 
@@ -139,16 +128,14 @@ void artificial_potential_planner::init_obstacles(){
 
 
 void artificial_potential_planner::odom_callback( nav_msgs::Odometry odom ) {
-
+	// to read current position
     Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
     Eigen::Vector3d vel_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z); 
 	
 	Eigen::Matrix3d R_enu2ned;
 	R_enu2ned << 1,0,0,0,-1,0,0,0,-1;
 
-    _pos = R_enu2ned*pos_enu;		//trasformazione da enu a ned -> pb è in ned
-	_vel = R_enu2ned*vel_enu;
-
+    _pos = R_enu2ned*pos_enu;		//transform from world-ENU in world-NED
 }
 
 
@@ -157,15 +144,13 @@ Eigen::Vector3d artificial_potential_planner::attractive_force_calc(){
 	Eigen::Vector3d e , f_attr;
 
 	e = _goal_pos - _pos;
+	
 	if (e.norm() < 1){
-		f_attr = _Ka*e; // -_Kd*_vel;
-		_rate = 100;		
+		f_attr = _Ka*e;
 	}
 	else{
 		f_attr = _Kb*e/e.norm();
-		_rate = 100;
 	}
-
 
 	return f_attr;
 }
@@ -174,38 +159,27 @@ Eigen::Vector3d artificial_potential_planner::repulsive_force_calc( double x_obs
 
 	Eigen::Vector3d e , f_rep;
 
-//	double eta_obs_i = radius_obstacle*2;
-//	double dist_from_center = sqrt( (_pos[0]-x_obs)*(_pos[0]-x_obs) + (_pos[1]-y_obs)*(_pos[1]-y_obs) + (_pos[2]-z_obs)*(_pos[2]-z_obs) );
-	double dist_from_center = sqrt( (_pos[0]-x_obs)*(_pos[0]-x_obs) + (_pos[1]-y_obs)*(_pos[1]-y_obs) );
+	double dist_from_center = sqrt( (_pos[0]-x_obs)*(_pos[0]-x_obs) + (_pos[1]-y_obs)*(_pos[1]-y_obs) );		//the z component is ignored because we supposed that the obstacles are columns
 
+	double eta_i = dist_from_center - radius_obstacle;		//distance from the surface of the obstacles
 
-	double eta_i = dist_from_center - radius_obstacle;
-
-	Eigen::Vector3d grad_eta_i;
+	Eigen::Vector3d grad_eta_i;								//analytic computation of the gradient
 	grad_eta_i(0) = (_pos[0] - x_obs)/dist_from_center;
 	grad_eta_i(1) = (_pos[1] - y_obs)/dist_from_center;
-//	grad_eta_i(2) = (z_obs-_pos[2])/dist_from_center;
 	grad_eta_i(2) = 0;
 
-//	cout << "grad_eta:" << endl << grad_eta_i << endl;
-
 	int gamma = 2;
-
 	if (eta_i <= eta_obs_i){
 		f_rep = _K_obs/pow(eta_i,2)*pow( (1/eta_i) - 1/eta_obs_i ,  gamma-1 )*grad_eta_i;
-	//	cout << "f_rep:" << endl << f_rep << endl;	
 	}
 	else{
 		f_rep.setZero();;
 	}
 
-	
-
-
 	return f_rep;
 }
 
-
+//set the position reference as the goal, and zero for velocity and acceleration 
 void artificial_potential_planner::stop_drone(){
 	std_msgs::Float64MultiArray msg;
 	cout << "stop " << endl;
@@ -222,20 +196,26 @@ void artificial_potential_planner::stop_drone(){
 
 void artificial_potential_planner::artificial_potential_planner_loop(){
 
-//	Eigen::Vector3d p , p_dot , p_dot_dot , p_dot_dot_f;
 	Eigen::Vector3d  p_dot_dot;
 	Eigen::Vector3d p_dot_old, p_dot_dot_old , p_dot_dot_old_f;
-	p.setZero();
+
+	p.setZero();	// initialize position
 	p(2) = -1;
+
 	p_dot.setZero();
 	p_dot_dot.setZero();
 	p_dot_old.setZero();
 	p_dot_dot_old.setZero();
 	p_dot_dot_old_f.setZero();
+
+
 	std_msgs::Float64MultiArray msg;
 
 	Eigen::Vector3d attractive_force , total_repulsive_force;
-	bool finish = false;
+	bool finish = false;		
+
+	double rate = 100;
+	ros::Rate r(100);
 
 	while(ros::ok){
 		std::cout << "Insert x reference" << endl;
@@ -247,49 +227,42 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 		p = _pos;
 		finish = false;
 		while ( !finish ){
-			attractive_force = attractive_force_calc();
+			attractive_force = attractive_force_calc();		//compute attractive force
 			total_repulsive_force.setZero();
-			for (int i = 0 ; i < obstacle_array_size ; i++){
+			for (int i = 0 ; i < obstacle_array_size ; i++){		//compute repulsive force for each obstacle
 				total_repulsive_force = total_repulsive_force + repulsive_force_calc( obstacle_array[i].pos_obs(0) , obstacle_array[i].pos_obs(1) , obstacle_array[i].pos_obs(2) , obstacle_array[i]._eta_obs_i , obstacle_array[i].radius);
 			}
 
-			p_dot = attractive_force + total_repulsive_force;
+			p_dot = attractive_force + total_repulsive_force;	//compute total force and use it as velocity reference
 
-		//	cout << "f attr: " << endl <<attractive_force << endl;
-		//	cout << "f rep: " << endl <<total_repulsive_force << endl;
+			p = p + p_dot/rate;		//obtain position reference by integration
 
-
-			
-			p = p + p_dot/_rate;		
-
-			p_dot_dot = (p_dot - p_dot_old)*_rate;
-			p_dot_dot_f = 0.9048*p_dot_dot_old_f + p_dot_dot_old*0.009516;  	//frequenza di taglio a 10 hz
+			p_dot_dot = (p_dot - p_dot_old)*rate;		//obtain acceleration reference by numeric derivation , and filter to reduce noise
+			p_dot_dot_f = 0.9048*p_dot_dot_old_f + p_dot_dot_old*0.009516;  	//cutoff frequency 10 hz
 			p_dot_dot_old_f = p_dot_dot_f;
 			p_dot_dot_old = p_dot_dot;	
 			p_dot_old = p_dot;	
 
-
-
+			//publish the computed position reference, maintain psi ref=0
 			msg.data = {p(0) , p(1) , p(2) , 0 ,
 						p_dot(0) , p_dot(1) , p_dot(2) , 0 ,
 						p_dot_dot_f(0) ,  p_dot_dot_f(1) ,  p_dot_dot_f(2) , 0};
-
-
 			_ref_pub.publish(msg);
 
 
 
-		    setModelPose(p_dot);
+		    setModelPose(p_dot);		//graphics: draw the total force arrow
 
 			log_data();
 
+			//call the stop if the drone is near the goal
 			if ( (abs((_goal_pos[0]-_pos[0])) < 0.01) && (abs((_goal_pos[1]-_pos[1]))< 0.01) && (abs((_goal_pos[2]-_pos[2])) < 0.01)){
 				stop_drone();
 				finish = true;
 			}
 
-
-			usleep(1000000/_rate);
+			r.sleep();
+//			usleep(1000000/rate);
 		}
 	}
 }
@@ -301,7 +274,7 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 			-v(1) , v(0) ,    0;
 	return skew;
 }
-
+//graphics: draw the total force arrow in real time
 void artificial_potential_planner::setModelPose(const Eigen::Vector3d & force ) {
  	gazebo_msgs::ModelState stateMsg;
 		stateMsg.model_name = "total_force_arrow";
@@ -346,10 +319,8 @@ void artificial_potential_planner::setModelPose(const Eigen::Vector3d & force ) 
 	}
 }
 
+//for data logging
 void artificial_potential_planner::empty_txt(){
-
-    // "svuota" i file di testo
-
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 	
     ofstream file_app_x(pkg_loc + "/data/app_x.txt");
@@ -385,7 +356,7 @@ void artificial_potential_planner::empty_txt(){
 }
 
 
-
+//for data logging
 void artificial_potential_planner::log_data(){
 //	cout << "logging" << endl;
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
