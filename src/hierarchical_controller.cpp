@@ -108,7 +108,6 @@ class hierarchical_controller {
 		bool _first_imu;	
 		bool _first_odom;
 		bool _first_ref;
-		bool _control_on;
 };
 
 
@@ -131,7 +130,6 @@ hierarchical_controller::hierarchical_controller() : _pos_ref(0,0,-1) , _eta_ref
 
 	_first_imu = false;
 	_first_odom = false;
-	_control_on = false;
 
 	//parameter initialization
 
@@ -382,7 +380,7 @@ void hierarchical_controller::ctrl_loop() {
 			phi_ref_dot_dot = (phi_ref_dot-phi_ref_dot_old)/Ts;  // Ts=0.01
 
 
-			phi_ref_dot_dot_f = 0.9048*phi_ref_dot_dot_old_f + phi_ref_dot_dot_old*0.009516;  	//frequenza di taglio a 10 hz
+			phi_ref_dot_dot_f = 0.9048*phi_ref_dot_dot_old_f + phi_ref_dot_dot_old*0.009516;  	//cutoff frequency 10 hz
 			phi_ref_dot_dot_old_f = phi_ref_dot_dot_f;
 			phi_ref_dot_dot_old = phi_ref_dot_dot;
 
@@ -392,7 +390,7 @@ void hierarchical_controller::ctrl_loop() {
 			theta_ref_dot_dot = (theta_ref_dot-theta_ref_dot_old)/Ts;  // Ts=0.01
 
 
-			theta_ref_dot_dot_f = 0.9048*theta_ref_dot_dot_old_f + theta_ref_dot_dot_old*0.009516;  	//frequenza di taglio a 10 hz
+			theta_ref_dot_dot_f = 0.9048*theta_ref_dot_dot_old_f + theta_ref_dot_dot_old*0.009516;  	//cutoff frequency 10 hz
 			theta_ref_dot_dot_old_f = theta_ref_dot_dot_f;
 			theta_ref_dot_dot_old = theta_ref_dot_dot;		
 

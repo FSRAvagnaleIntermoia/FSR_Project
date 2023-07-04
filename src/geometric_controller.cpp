@@ -204,149 +204,145 @@ void geometric_controller::imu_callback ( sensor_msgs::Imu imu ){
 }
 
 void geometric_controller::ctrl_loop() {	
-	ros::Rate rate(100);
 
-	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_int_R ;
-	Eigen::Vector3d z_bd , x_bd , y_bd , omega_b_b_ref, omega_b_b_ref_dot , omega_b_b_ref_old , omega_b_b_ref_old_f , omega_b_b_ref_f , omega_b_b_ref_dot_f , omega_b_b_ref_dot_old_f , omega_b_b_ref_dot_old , A;
+	ros::Rate rate(100);						//100 Hz frequency
+
+    mav_msgs::Actuators act_msg;						//initialize motor command
+    act_msg.angular_velocities.resize(motor_number);		
+	Eigen::VectorXd angular_velocities_sq(motor_number);
+	angular_velocities_sq.setZero();
+
+	Eigen::Vector4d control_input;
+	control_input.setZero();
+	_u_T = 0;
+	_tau_b.setZero();	
+
 	Eigen::Vector3d e3(0,0,1);
-	Eigen::Matrix3d Rb_d , Rb_d_old , Rb_d_dot , Rb_d_dot_f , Rb_d_dot_old_f, Rb_d_dot_old;
+
+	Eigen::Vector3d e_p , e_p_dot, e_p_int, A , e_int_R;		//outer loop variables
+
+	Eigen::Vector3d z_bd , x_bd , y_bd , omega_b_b_ref;					// inner loop variables
+	Eigen::Matrix3d Rb_d;
+	Eigen::Vector3d omega_b_b_ref_dot , omega_b_b_ref_old , omega_b_b_ref_old_f , omega_b_b_ref_f ,		//filter variables
+					omega_b_b_ref_dot_f , omega_b_b_ref_dot_old_f , omega_b_b_ref_dot_old;
+	Eigen::Matrix3d Rb_d_old, Rb_d_dot, Rb_d_dot_f ,Rb_d_dot_old , Rb_d_dot_old_f;
+				
+
 	Rb_d_old.setIdentity();
 	omega_b_b_ref_dot.setZero();
 	e_p_int.setZero();
 	e_int_R.setZero();
-
-	_u_T = 0;
-	Eigen::VectorXd angular_velocities_sq(motor_number);
-	Eigen::VectorXd control_input(4);
-	control_input.setZero();
-
-    mav_msgs::Actuators act_msg;
-    act_msg.angular_velocities.resize(motor_number);
-
-
-	std::cout << "Waiting for sensors" << endl;
-	while (!_first_imu) rate.sleep();
-	std::cout << "Take off" << endl;
-	for (int i = 0 ; i < motor_number ; i++){
-	    act_msg.angular_velocities[i] = 545.1;	
-	}
-	_act_pub.publish(act_msg);
-	sleep(5.0);
-
-	std::cout << "Control on" << endl;
-	_control_on = true;
-
-
 	Rb_d_old.setIdentity();
 	Rb_d_dot_old.setZero();
 	Rb_d_dot_old_f.setZero();
-
 	omega_b_b_ref_old.setZero();
 	omega_b_b_ref_old.setZero();
 	omega_b_b_ref_old_f.setZero();	
 	
+	cout << "Waiting for sensors" << endl;
+	while( !(_first_imu && _first_odom) ) rate.sleep();
 
+	double time = 0;
+	std::cout << "Take off" << endl;	
 
 	while(ros::ok){
 
-		cout << "p_b:" << _p_b << endl << endl;
-		cout << "p_b_dot:" << _p_b_dot << endl << endl;
-		cout << "pos_ref:" << _pos_ref << endl << endl;
-		cout << "e_p: " << endl << e_p << endl << endl;		
-		cout << "Rb_d: " << endl << Rb_d << endl << endl;
-		cout << "Rb: " << endl << _Rb << endl << endl;
-		cout << "e_R: " << e_R << endl << endl;
-		cout << "e_W: " << e_W << endl << endl;		
-		cout << "omega_b_b:" << _omega_b_b << endl << endl;
-		cout << "control input: " << endl << control_input << endl << endl;
-						
-		e_p = _p_b - _pos_ref;
-		e_p_dot = _p_b_dot - _pos_ref_dot;
-		e_p_int = e_p_int + e_p*Ts;
-		A = -_Kp*e_p -_Ki*e_p_int - _Kv*e_p_dot - _mass*gravity*e3 + _mass*_pos_ref_dot_dot;
-
-		z_bd = -A/A.norm();
-		x_bd(0) = cos(_psi_ref);
-		x_bd(1) = sin(_psi_ref);
-		x_bd(2) = 0;
-		y_bd = skew(z_bd)*x_bd/(skew(z_bd)*x_bd).norm();
-
-		Rb_d.block<3,1>(0,0) = skew(y_bd)*z_bd; 
-		Rb_d.block<3,1>(0,1) = y_bd;
-		Rb_d.block<3,1>(0,2) = z_bd;
-
-
-		e_R = 0.5*v_operator(Rb_d.transpose()*_Rb - _Rb.transpose()*Rb_d);
-				
-		Rb_d_dot = (Rb_d - Rb_d_old)/Ts;
-		Rb_d_dot_f = 0.9048*Rb_d_dot_old_f + Rb_d_dot_old*0.009516;  	//frequenza di taglio a 10 hz
-		Rb_d_dot_old_f = Rb_d_dot_f;
-		Rb_d_dot_old = Rb_d_dot;
-		Rb_d_old = Rb_d;
-
-		omega_b_b_ref = v_operator(Rb_d.transpose()*Rb_d_dot_f);
-	//	omega_b_b_ref = v_operator(Rb_d.transpose()*Rb_d_dot);
-
-		omega_b_b_ref_dot = (omega_b_b_ref - omega_b_b_ref_old)/Ts;
-		omega_b_b_ref_dot_f = 0.9048*omega_b_b_ref_dot_old_f + omega_b_b_ref_dot_old*0.009516;  	//frequenza di taglio a 10 hz
-		omega_b_b_ref_dot_old_f = omega_b_b_ref_dot_f;
-		omega_b_b_ref_dot_old = omega_b_b_ref_dot;
-		omega_b_b_ref_old = omega_b_b_ref;
-
-
-		e_W = _omega_b_b - _Rb.transpose()*Rb_d*omega_b_b_ref;
-		e_int_R = e_int_R + e_R*Ts;
-
-
-
-
-
-
-		_tau_b = -_KR*e_R -_Ki_R*e_int_R - _KW*e_W + skew(_omega_b_b)*_Ib*_omega_b_b -_Ib*( skew(_omega_b_b)*_Rb.transpose()*Rb_d*omega_b_b_ref - _Rb.transpose()*Rb_d*omega_b_b_ref_dot_f );
-	//	_tau_b = -_KR*e_R -_Ki_R*e_int_R - _KW*e_W + skew(_omega_b_b)*_Ib*_omega_b_b -_Ib*( skew(_omega_b_b)*_Rb.transpose()*Rb_d*omega_b_b_ref - _Rb.transpose()*Rb_d*omega_b_b_ref_dot );
-
-
-		_u_T = -A.transpose()*_Rb*e3;
-
-
-
-		geometry_msgs::Wrench wrench_msg;
-		wrench_msg.force.x = 0;
-		wrench_msg.force.y = 0;
-		wrench_msg.force.z = -_u_T;
-		wrench_msg.torque.x = _tau_b[0];
-		wrench_msg.torque.y = _tau_b[1];
-		wrench_msg.torque.z = _tau_b[2];
-
-		control_input[0] = _u_T;
-		control_input[1] = _tau_b[0];
-		control_input[2] = _tau_b[1];
-		control_input[3] = _tau_b[2];
-	
-		angular_velocities_sq =  _allocation_matrix.transpose()*(_allocation_matrix*_allocation_matrix.transpose()).inverse() * control_input;
-
-		for (int i=0 ; i<motor_number ; i++){
-		//	std::cout << angular_velocities_sq(i) << endl;
-			if (angular_velocities_sq(i) >= 0) {
-		    	act_msg.angular_velocities[i] = sqrt(angular_velocities_sq(i));	
+		if (time <= takeoff_time){						//Take off
+			for (int i = 0 ; i < motor_number ; i++){
+	    		act_msg.angular_velocities[i] = init_prop_speed;	
 			}
-			if (angular_velocities_sq(i) < 0) {
-				cout << "negative motor velocity!" << endl;
-		    	act_msg.angular_velocities[i] = 0;
-			}
+			_u_T = pow(init_prop_speed,2)*C_T*motor_number;
+			_act_pub.publish(act_msg);	
 		}
-		/*	//for data logging
-			_psi = atan2( _Rb(1,0) , _Rb(0,0) );
-			if (_first_ref == true &&  _log_time < 60){
-				log_data();			
-				_log_time = _log_time + Ts;	
-			}	
-			cout << _log_time << endl;
-		*/
-		_act_pub.publish(act_msg);
+
+		if (time > takeoff_time){						//Control loop
+			/*
+			cout << "p_b:" << _p_b << endl << endl;
+			cout << "p_b_dot:" << _p_b_dot << endl << endl;
+			cout << "pos_ref:" << _pos_ref << endl << endl;
+			cout << "e_p: " << endl << e_p << endl << endl;		
+			cout << "Rb_d: " << endl << Rb_d << endl << endl;
+			cout << "Rb: " << endl << _Rb << endl << endl;
+			cout << "e_R: " << e_R << endl << endl;
+			cout << "e_W: " << e_W << endl << endl;		
+			cout << "omega_b_b:" << _omega_b_b << endl << endl;
+			cout << "control input: " << endl << control_input << endl << endl;
+			*/
+
+			// outer loop //				
+			e_p = _p_b - _pos_ref;
+			e_p_dot = _p_b_dot - _pos_ref_dot;
+			e_p_int = e_p_int + e_p*Ts;
+			A = -_Kp*e_p -_Ki*e_p_int - _Kv*e_p_dot - _mass*gravity*e3 + _mass*_pos_ref_dot_dot;
+
+			_u_T = -A.transpose()*_Rb*e3;
+
+			// inner loop //
+
+			z_bd = -A/A.norm();
+			x_bd(0) = cos(_psi_ref);
+			x_bd(1) = sin(_psi_ref);
+			x_bd(2) = 0;
+			y_bd = skew(z_bd)*x_bd/(skew(z_bd)*x_bd).norm();
+
+			Rb_d.block<3,1>(0,0) = skew(y_bd)*z_bd; 		//definition of Rb desired
+			Rb_d.block<3,1>(0,1) = y_bd;
+			Rb_d.block<3,1>(0,2) = z_bd;
+
+			e_R = 0.5*v_operator(Rb_d.transpose()*_Rb - _Rb.transpose()*Rb_d);
+			e_int_R = e_int_R + e_R*Ts;
+			
+			Rb_d_dot = (Rb_d - Rb_d_old)/Ts;
+			Rb_d_dot_f = 0.9048*Rb_d_dot_old_f + Rb_d_dot_old*0.009516;  	//cutoff frequency 10 hz
+			Rb_d_dot_old_f = Rb_d_dot_f;
+			Rb_d_dot_old = Rb_d_dot;
+			Rb_d_old = Rb_d;
+
+			omega_b_b_ref = v_operator(Rb_d.transpose()*Rb_d_dot_f);
+
+			omega_b_b_ref_dot = (omega_b_b_ref - omega_b_b_ref_old)/Ts;
+			omega_b_b_ref_dot_f = 0.9048*omega_b_b_ref_dot_old_f + omega_b_b_ref_dot_old*0.009516;  	//cutoff frequency 10 hz
+			omega_b_b_ref_dot_old_f = omega_b_b_ref_dot_f;
+			omega_b_b_ref_dot_old = omega_b_b_ref_dot;
+			omega_b_b_ref_old = omega_b_b_ref;
 
 
+			e_W = _omega_b_b - _Rb.transpose()*Rb_d*omega_b_b_ref;
 
+			_tau_b = -_KR*e_R -_Ki_R*e_int_R - _KW*e_W + skew(_omega_b_b)*_Ib*_omega_b_b -_Ib*( skew(_omega_b_b)*_Rb.transpose()*Rb_d*omega_b_b_ref - _Rb.transpose()*Rb_d*omega_b_b_ref_dot_f );
+
+
+			// control allocation // 
+
+			control_input(0) = _u_T;
+			control_input(1) = _tau_b(0);
+			control_input(2) = _tau_b(1);
+			control_input(3) = _tau_b(2);
+		
+			angular_velocities_sq =  _allocation_matrix.transpose()*(_allocation_matrix*_allocation_matrix.transpose()).inverse() * control_input;
+
+			for (int i=0 ; i<motor_number ; i++){
+			//	std::cout << angular_velocities_sq(i) << endl;
+				if (angular_velocities_sq(i) >= 0) {
+					act_msg.angular_velocities[i] = sqrt(angular_velocities_sq(i));	
+				}
+				if (angular_velocities_sq(i) < 0) {
+					cout << "negative motor velocity!" << endl;
+					act_msg.angular_velocities[i] = 0;
+				}
+			}
+			/*	//for data logging
+				_psi = atan2( _Rb(1,0) , _Rb(0,0) );
+				if (_first_ref == true &&  _log_time < 60){
+					log_data();			
+					_log_time = _log_time + Ts;	
+				}	
+				cout << _log_time << endl;
+			*/
+			_act_pub.publish(act_msg);
+		}
+
+		time = time + Ts;
 		rate.sleep();		
 	}
 }
