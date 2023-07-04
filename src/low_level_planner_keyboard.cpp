@@ -1,21 +1,15 @@
 #include "ros/ros.h"
-#include "mav_msgs/Actuators.h"
-#include "nav_msgs/Odometry.h"
-#include "sensor_msgs/Imu.h"
 #include "Eigen/Dense"
-#include "std_msgs/Float64.h"
 #include "std_msgs/Float64MultiArray.h"
 #include "boost/thread.hpp"
 
-const double Ts = 0.01;
+const double Ts = 0.01;		//sampling time
 
 using namespace std;
 
 class low_level_planner {
 	public:
 		low_level_planner();	
-
-
 		void low_level_planner_loop();	
 		void run();
 
@@ -42,30 +36,28 @@ class low_level_planner {
 		Eigen::VectorXd _z_ref_dot_dot;
 		Eigen::VectorXd _psi_ref_dot_dot;
 
-		int _time_len;
+		int _time_len;	
 		double _ttot, _x0, _y0, _z0, _psi0, _xf, _yf, _zf, _psif;
 	
-
-		Eigen::VectorXd _time;
-
 };
 
 
 low_level_planner::low_level_planner(){
-
 	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
 	_x0 = 0;
 	_y0 = 0;
 	_z0 = -1;
 	_psi0 = 0;
 	_ttot = 20;
-
 }
+
 
 void low_level_planner::init_trajectory(double ttot , double x0, double y0, double z0, double psi0, double xf, double yf, double zf, double psif ){
 
-	_time_len = ceil(ttot/Ts); //numero di campioni
-	_x_ref.resize(_time_len);
+	//this function uses 7th order polynomial to obtain reference values, we assume that initial and final velocity, acceleration and jerk are 0
+
+	_time_len = ceil(ttot/Ts); //number of samples
+	_x_ref.resize(_time_len);		//these vectors contain the reference at each time instant
 	_y_ref.resize(_time_len);
 	_z_ref.resize(_time_len);
 	_psi_ref.resize(_time_len);
@@ -77,11 +69,6 @@ void low_level_planner::init_trajectory(double ttot , double x0, double y0, doub
 	_y_ref_dot_dot.resize(_time_len);
 	_z_ref_dot_dot.resize(_time_len);
 	_psi_ref_dot_dot.resize(_time_len);
-
-	_time.resize(_time_len);
-	for (int i = 0 ; i < _time_len ; i++){
-		_time(i) = i*Ts;
-	}	
 
 	Eigen::MatrixXf A(8,8);
 	A << 0 , 0 , 0 , 0 , 0 , 0 , 0  , 1 ,
@@ -101,10 +88,13 @@ void low_level_planner::init_trajectory(double ttot , double x0, double y0, doub
 }
 
 void low_level_planner::ref_var_filler( Eigen::VectorXd & var_ref, Eigen::VectorXd & var_ref_dot , Eigen::VectorXd & var_ref_dot_dot , Eigen::MatrixXf A , double var0 , double varf ,int idx){
+	
+	//this function uses the coefficient given by the computed A matrix to construct the time law for each variable
+	
 	Eigen::MatrixXf b(8,1);
-	b.setZero();
-	b(0) = var0;
-	b(1) = varf;
+	b.setZero();		// the initial and final value of the derivatives are 0
+	b(0) = var0;		// initial value of the variable
+	b(1) = varf;		// final value of the variable
 	Eigen::MatrixXf a_temp(8,1);
 	Eigen::Vector4d a7 , a6, a5 , a4 , a3 , a2 , a1 , a0;
 	a_temp = A.inverse()*b;
@@ -130,9 +120,9 @@ void low_level_planner::ref_var_filler( Eigen::VectorXd & var_ref, Eigen::Vector
 
 
 void low_level_planner::low_level_planner_loop() {	
+	ros::Rate rate(100);
 	int time_idx = 0;
 	std_msgs::Float64MultiArray msg;
-	ros::Rate rate(100);
 	while(ros::ok){
 		std::cout << "Insert x reference" << endl;
 		std::cin >> _xf;
@@ -145,17 +135,9 @@ void low_level_planner::low_level_planner_loop() {
 		std::cout << "Insert time length" << endl;
 		std::cin >> _ttot;
 
-//		_xf = 2;
-//		_yf = -1;
-//		_zf = -5;
-//		_psif = 1.57;
-//		_ttot = 20;
-
-
 		init_trajectory(_ttot,_x0,_y0,_z0,_psi0,_xf,_yf,_zf,_psif);
 
-
-		while (time_idx < _time_len){
+		while (time_idx < _time_len){		//publish the reference at each time instant
 
 			msg.data = { _x_ref(time_idx) , _y_ref(time_idx) , _z_ref(time_idx) , _psi_ref(time_idx) , 
 						 _x_ref_dot(time_idx) , _y_ref_dot(time_idx) , _z_ref_dot(time_idx) , _psi_ref_dot(time_idx) , 
@@ -164,10 +146,10 @@ void low_level_planner::low_level_planner_loop() {
 			_ref_pub.publish(msg);
 
 			time_idx ++;	
-			usleep(10000);	
+			rate.sleep();	
 		}
 
-		_x0 = _xf;
+		_x0 = _xf;				//start a new trajectory from the last point
 		_y0 = _yf;
 		_z0 = _zf;
 		_psi0 = _psif;
