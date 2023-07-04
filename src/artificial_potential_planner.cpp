@@ -79,7 +79,7 @@ class artificial_potential_planner {
 		int _rate;
 
 
-		double _Ka , _Kb , _Kd , _K_obs , _eta_obs_i;
+		double _Ka , _Kb , _K_obs , _eta_obs_i;
 };
 
 
@@ -91,10 +91,8 @@ artificial_potential_planner::artificial_potential_planner(){
 	_goal_pos[2] = -2;
 
 	_Kb = 0.4;
-	_Ka = _Kb*2;
-	_Kd = 1;
+	_Ka = _Kb; //_Kb*2; 
 	_K_obs = 0.04;
-//	_eta_obs_i = 1.5;
 
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &artificial_potential_planner::odom_callback, this);	
 
@@ -210,11 +208,14 @@ Eigen::Vector3d artificial_potential_planner::repulsive_force_calc( double x_obs
 
 void artificial_potential_planner::stop_drone(){
 	std_msgs::Float64MultiArray msg;
+	cout << "stop " << endl;
 	msg.data = {_goal_pos(0) , _goal_pos(1) , _goal_pos(2) , 0 ,
 				0 , 0 , 0 , 0 ,
-				0 , 0 , 0 , 0 };
-
-	_ref_pub.publish(msg);
+				0 , 0 , 0 , 0 };	
+	while(ros::ok){
+		_ref_pub.publish(msg);
+		log_data();
+	}
 }
 
 
@@ -254,8 +255,8 @@ void artificial_potential_planner::artificial_potential_planner_loop(){
 
 			p_dot = attractive_force + total_repulsive_force;
 
-			cout << "f attr: " << endl <<attractive_force << endl;
-			cout << "f rep: " << endl <<total_repulsive_force << endl;
+		//	cout << "f attr: " << endl <<attractive_force << endl;
+		//	cout << "f rep: " << endl <<total_repulsive_force << endl;
 
 
 			
@@ -386,7 +387,7 @@ void artificial_potential_planner::empty_txt(){
 
 
 void artificial_potential_planner::log_data(){
-	cout << "logging" << endl;
+//	cout << "logging" << endl;
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 
    ofstream file_app_x(pkg_loc + "/data/app_x.txt",std::ios_base::app);

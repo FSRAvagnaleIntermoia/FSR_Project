@@ -110,7 +110,7 @@
    args="-file $(find fsr_pkg)/urdf/goal.urdf -urdf 
          -x 5.0
          -y 7.0
-         -z 2.0
+         -z 4.0
          -model goal"
    respawn="false" output="screen">
   </node>    

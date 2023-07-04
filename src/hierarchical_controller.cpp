@@ -435,11 +435,12 @@ void hierarchical_controller::ctrl_loop() {
 			}
 				//FOR DATA LOGGING
 
-			if (_first_ref == true &&  _log_time < 30){
+			if (_first_ref == true &&  _log_time < 60){
 				log_data();			
 				_log_time = _log_time + Ts;	
 			}	
-
+			cout << _log_time << endl;
+			
 			_act_pub.publish(act_msg);
 		}
 
