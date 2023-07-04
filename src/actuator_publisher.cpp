@@ -20,10 +20,7 @@ int main(int argc, char **argv) {
 	while ( ros::ok() ) {
 		cout << "Insert motor speed" << endl;
 		cin >> ang_vel;
-	/*	for (int i = 0 ; i < prop_number ; i++){
-		    act_msg.angular_velocities[i] = ang_vel;	
-		}*/
-
+		
 	    act_msg.angular_velocities[0] = ang_vel;	
 	    act_msg.angular_velocities[1] = ang_vel;	
 	    act_msg.angular_velocities[2] = ang_vel;	
