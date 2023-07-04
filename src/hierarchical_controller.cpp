@@ -204,7 +204,7 @@ void hierarchical_controller::odom_callback( nav_msgs::Odometry odom ) {
 void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 	//reads angular velocity and orientation
 	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body-ENU frame
-	 _omega_b_b = _R_enu2ned*omega_b_b_enu;								     								//transform in body-NED frane
+	_omega_b_b = _R_enu2ned*omega_b_b_enu;								     								//transform in body-NED frame
 
 	double phi, theta, psi;
 	
@@ -221,20 +221,21 @@ void hierarchical_controller::imu_callback ( sensor_msgs::Imu imu ){
 	_eta_b(1) = theta;
 	_eta_b(2) = psi;
 
+	double phi_dot = _eta_b_dot(0);
+	double theta_dot = _eta_b_dot(1);
+
 
 	_Q << 1 ,        0 	,  		   -sin(theta) ,
 		  0 ,  cos(phi) ,  cos(theta)*sin(phi) ,
 		  0 , -sin(phi) ,   cos(theta)*cos(phi);	
 		  
-	_eta_b_dot = _Q.inverse()*_omega_b_b;
-
-	double phi_dot = _eta_b_dot(0);
-	double theta_dot = _eta_b_dot(1);
 
 	_Q_dot << 0 ,        0           ,									         -theta_dot*cos(theta),
 		      0 ,  -phi_dot*sin(phi) ,    -theta_dot*sin(theta)*sin(phi) + phi_dot*cos(theta)*cos(phi),
 		      0 ,  -phi_dot*cos(phi) ,    -theta_dot*sin(theta)*cos(phi) - phi_dot*cos(theta)*sin(phi);	
 
+
+	_eta_b_dot = _Q.inverse()*_omega_b_b;
 
 	_C = _Q.transpose()*skew(_Q*_eta_b_dot)*_Ib*_Q 	+ _Q.transpose()*_Ib*_Q_dot ;
 	_M = _Q.transpose()*_Ib*_Q;
@@ -310,7 +311,13 @@ void hierarchical_controller::ctrl_loop() {
 	double theta_ref_dot_dot_old_f = 0.0;
 	double phi_ref_dot_dot_old = 0.0;
 	double theta_ref_dot_dot_old = 0.0;	
-	
+
+	Eigen::Vector3d eta_r_dot , eta_r_dot_dot , v_eta;
+	e_eta_int.setZero();
+	eta_r_dot.setZero();
+	eta_r_dot_dot.setZero();
+	v_eta.setZero();
+		
 	cout << "Waiting for sensors" << endl;
 	while( !(_first_imu && _first_odom) ) rate.sleep();
 
@@ -468,10 +475,11 @@ void hierarchical_controller::ctrl_loop() {
 }
 
 //	for data logging //
+
 void hierarchical_controller::empty_txt(){
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
-	
-    ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
+    
+	ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
     file_pos_x << "";
     file_pos_x.close();
     ofstream file_pos_y(pkg_loc + "/data/pos_y.txt");

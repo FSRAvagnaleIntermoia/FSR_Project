@@ -13,10 +13,7 @@
 #include <gazebo_msgs/ApplyBodyWrench.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Vector3.h>
-
-//Include tf libraries							
-#include "tf2_msgs/TFMessage.h"
-#include "tf/transform_listener.h"
+#include "boost/thread.hpp"
 
 
 using namespace std;
@@ -31,11 +28,11 @@ const double arm_length = 0.215;
 const int motor_number = 6;
 const double Ts = 0.01;
 
-const double uncertainty = 1;
+const double uncertainty = 1;		//multiplicative uncertainty
 const bool enable_estimator = 1;
-const bool enable_disturbance = 1;
+const bool enable_disturbance = 0;
 
-const double init_prop_speed = 546;
+const double init_prop_speed = 546; //motor speed during take off phase
 const double takeoff_time = 3.5;
 
 
@@ -70,10 +67,10 @@ class passivity_based_controller {
 		Eigen::Vector3d	_pos_ref_dot_dot;
 		Eigen::Vector3d _eta_ref_dot_dot;
 
-		Eigen::Matrix3d _Rb;
-	    Eigen::Matrix3d _R_enu2ned;
-		Eigen::Matrix3d _Q;
-
+		Eigen::Matrix3d _Rb;			//expresses body orientation in world frame
+	    Eigen::Matrix3d _R_enu2ned;		//to transform from ENU to NED frames
+		
+		Eigen::Matrix3d _Q;				//same definitions as seen in lectures
 		Eigen::Matrix3d _Q_dot;
 		Eigen::Matrix3d _Ib;
 		Eigen::Matrix3d _C;	
@@ -81,23 +78,23 @@ class passivity_based_controller {
 
 		Eigen::Matrix4Xd _allocation_matrix;
 
-		Eigen::Vector3d _omega_b_b;
-		Eigen::Vector3d _p_b;
-		Eigen::Vector3d _p_b_dot;
-		Eigen::Vector3d _eta_b;
-		Eigen::Vector3d _eta_b_dot;
+		Eigen::Vector3d _omega_b_b;		//angular velocity expressed in body NED frame
+		Eigen::Vector3d _p_b;			//position expressed in world NED frame
+		Eigen::Vector3d _p_b_dot;		//velocity expressed in world NED frame
+		Eigen::Vector3d _eta_b;			//RPY angles 
+		Eigen::Vector3d _eta_b_dot;		//RPY angles derivatives
 
 
-		Eigen::Vector3d _est_dist_lin;
-		Eigen::Vector3d _est_dist_ang;
+		Eigen::Vector3d _est_dist_lin;	//estimated external/unmodelled force
+		Eigen::Vector3d _est_dist_ang;  //estimated external/unmodelled torque
 
 		double _mass;
 
-		double _Kp;
+		double _Kp;				//gains of the outer loop (equivalent to diagonal matrices)
 		double _Kp_dot;
 		double _Ki;
 
-		Eigen::Matrix3d _Ke;
+		Eigen::Matrix3d _Ke;	//gains of the inner loop
 		Eigen::Matrix3d _Ke_dot;
 		Eigen::Matrix3d _Ki_e;
 
@@ -107,11 +104,12 @@ class passivity_based_controller {
 		Eigen::Matrix3d _K_o;
 
 
-		double _c0; //estimator constant
+		double _c0; 			//first order estimator constant (bandwidth)
 
-		double _u_T;	//inputs
+		double _u_T;				//control inputs
 		Eigen::Vector3d _tau_b;
-		
+
+
 		double _log_time;	//for data log
 
 		bool _first_imu;
@@ -121,18 +119,17 @@ class passivity_based_controller {
 };
 
 
-
+//sets initial position reference to [0,0,1]'
 passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _eta_ref(0,0,0) , _pos_ref_dot(0,0,0) , _eta_ref_dot(0,0,0), _pos_ref_dot_dot(0,0,0) , _eta_ref_dot_dot(0,0,0){
 
 	_ref_sub = _nh.subscribe("/low_level_planner/reference_trajectory", 0, &passivity_based_controller::ref_callback, this);	
-
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &passivity_based_controller::odom_callback, this);	
 	_imu_sub = _nh.subscribe("/firefly/ground_truth/imu", 0, &passivity_based_controller::imu_callback, this);	
 
 	_act_pub = _nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
 
 
-	_allocation_matrix.resize(4,motor_number);
+	_allocation_matrix.resize(4,motor_number);		//4x6 allocation matrix
 	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
 						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
 						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
@@ -143,13 +140,14 @@ passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _e
 	_first_odom = false;
 	_control_on = false;
 
+	//parameter initialization
+
  	_R_enu2ned << 1,0,0,0,-1,0,0,0,-1; 
 
 	_mass = 1.56779;
-	_mass = _mass * uncertainty;
+	_mass = _mass * uncertainty;		//multiplicative uncertainty for mass and inertia matrix
 	_Ib << Ixx,0,0,0,Iyy,0,0,0,Izz;
 	_Ib = _Ib * uncertainty;
-
 
 	_Kp = 2;
 	_Kp_dot = 1;
@@ -186,6 +184,7 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 }
 
 void passivity_based_controller::ref_callback( std_msgs::Float64MultiArray msg){
+	//reads position, velocity and acceleration reference values for x,y,z,psi
 	_pos_ref(0) = msg.data[0];
 	_pos_ref(1) = msg.data[1];
 	_pos_ref(2) = msg.data[2];
@@ -203,28 +202,29 @@ void passivity_based_controller::ref_callback( std_msgs::Float64MultiArray msg){
 
 
 void passivity_based_controller::odom_callback( nav_msgs::Odometry odom ) {
-
-    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world ENU frame
-    Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body ENU frame
+	//reads position and linear velocity
+    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world-ENU frame
+    Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body-ENU frame
 	
-    _p_b = _R_enu2ned*pos_enu;							//transform in world NED frame
-	_p_b_dot = _Rb*_R_enu2ned*vel_b_enu;  				//transform in world NED frame (first in body NED then in world NED)	
+    _p_b = _R_enu2ned*pos_enu;							//transform in world-NED frame
+	_p_b_dot = _Rb*_R_enu2ned*vel_b_enu;  				//transform in world-NED frame (first in body-NED then in world-NED)	
 
 	_first_odom = true;
 }
 
 void passivity_based_controller::imu_callback ( sensor_msgs::Imu imu ){
-	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body ENU frame
-	 _omega_b_b = _R_enu2ned.transpose()*omega_b_b_enu;								     	//transform in NED body frane
+	//reads angular velocity and orientation	
+	Eigen::Vector3d omega_b_b_enu(imu.angular_velocity.x,imu.angular_velocity.y,imu.angular_velocity.z);    //omega_b_b in body-ENU frame
+	_omega_b_b = _R_enu2ned*omega_b_b_enu;								     								//transform in body-NED frame
 
 	double phi, theta, psi;
 	
-	Eigen::Quaterniond quat(imu.orientation.w,imu.orientation.x,imu.orientation.y,imu.orientation.z);
+	Eigen::Quaterniond quat(imu.orientation.w,imu.orientation.x,imu.orientation.y,imu.orientation.z);		//obtain orientation in ENU frame
 	Eigen::Matrix3d R = quat.toRotationMatrix();
 
-    _Rb = _R_enu2ned.transpose()*R*_R_enu2ned;
+    _Rb = _R_enu2ned*R*_R_enu2ned.transpose();						//transform in NED frame
 
-    psi = atan2( _Rb(1,0) , _Rb(0,0) );
+	psi = atan2( _Rb(1,0) , _Rb(0,0) );													//extract RPY angles
     theta = atan2( -_Rb(2,0) , sqrt(_Rb(2,1)*_Rb(2,1) + _Rb(2,2)*_Rb(2,2)) );
     phi = atan2( _Rb(2,1),_Rb(2,2) );
 
@@ -255,7 +255,7 @@ void passivity_based_controller::imu_callback ( sensor_msgs::Imu imu ){
 }
 
 
-bool applyWrench( const geometry_msgs::Wrench& wrench) {	//DISTURBANCE
+bool applyWrench( const geometry_msgs::Wrench& wrench) {	//apply disturbance
     ros::NodeHandle nh;
     ros::ServiceClient applyWrenchClient = nh.serviceClient<gazebo_msgs::ApplyBodyWrench>("/gazebo/apply_body_wrench");
     gazebo_msgs::ApplyBodyWrench srv;
@@ -273,13 +273,11 @@ bool applyWrench( const geometry_msgs::Wrench& wrench) {	//DISTURBANCE
     srv.request.start_time = ros::Time::now();
     srv.request.duration = ros::Duration(0.01);
 
-    if (applyWrenchClient.call(srv) && srv.response.success)
-    {
+    if (applyWrenchClient.call(srv) && srv.response.success){
     //    ROS_INFO("Wrench applied successfully.");
         return true;
     }
-    else
-    {
+    else{
         ROS_ERROR("Failed to apply wrench.");
         return false;
     }
@@ -290,16 +288,19 @@ bool applyWrench( const geometry_msgs::Wrench& wrench) {	//DISTURBANCE
 
 void passivity_based_controller::ctrl_loop() {	
 
-	ros::Rate rate(100);
-    mav_msgs::Actuators act_msg;
+	ros::Rate rate(100);						//100 Hz frequency
+    
+	mav_msgs::Actuators act_msg;						//initialize motor command
     act_msg.angular_velocities.resize(motor_number);
-
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 	angular_velocities_sq.setZero();
+
 	Eigen::Vector4d control_input;
 	control_input.setZero();
+	_u_T = 0;
+	_tau_b.setZero();	
 
-	double k0 = _c0;
+	double k0 = _c0;						// define estimator variables
 	Eigen::Vector3d e3(0,0,1);
 	Eigen::Vector3d q_lin , q_ang , q_dot_lin_est , q_dot_ang_est , q_lin_est , q_ang_est;	
 	q_lin_est.setZero();
@@ -307,21 +308,20 @@ void passivity_based_controller::ctrl_loop() {
 	_est_dist_lin.setZero();
 	_est_dist_ang.setZero();	
 
-	_u_T = 0;
-	_tau_b.setZero();
 
-	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_eta, e_eta_dot, e_eta_int , mu_d , tau_tilde ;
+	Eigen::Vector3d e_p , e_p_dot, e_p_int , e_eta, e_eta_dot, e_eta_int , mu_d , tau_tilde ;		//define controller variables
 	e_p_int.setZero();
 	e_eta_int.setZero();
 
 
+	//define variables for filters of roll and pitch angles reference
 	double phi_ref , theta_ref , phi_ref_dot, theta_ref_dot , phi_ref_dot_dot , theta_ref_dot_dot , phi_ref_old = 0 , theta_ref_old = 0 , phi_ref_dot_old = 0 , theta_ref_dot_old = 0 ;
-	float phi_ref_dot_dot_f = 0.0;
-	float theta_ref_dot_dot_f = 0.0;
-	float phi_ref_dot_dot_old_f = 0.0;
-	float theta_ref_dot_dot_old_f = 0.0;
-	float phi_ref_dot_dot_old = 0.0;
-	float theta_ref_dot_dot_old = 0.0;	
+	double phi_ref_dot_dot_f = 0.0;
+	double theta_ref_dot_dot_f = 0.0;
+	double phi_ref_dot_dot_old_f = 0.0;
+	double theta_ref_dot_dot_old_f = 0.0;
+	double phi_ref_dot_dot_old = 0.0;
+	double theta_ref_dot_dot_old = 0.0;	
 	
 	Eigen::Vector3d eta_r_dot , eta_r_dot_dot , v_eta;
 	e_eta_int.setZero();
@@ -332,18 +332,13 @@ void passivity_based_controller::ctrl_loop() {
 	cout << "Waiting for sensors" << endl;
 	while( !(_first_imu && _first_odom) ) rate.sleep();
 
-
-
 	double time = 0;
-
 	std::cout << "Take off" << endl;
-
-
 
 	while(ros::ok){
 
 		
-		if (enable_estimator){						//ESTIMATION: -> G=k0/(k0+s); transfer function for the estimator
+		if (enable_estimator){						//ESTIMATION: -> G=k0/(k0+s) transfer function for the estimator
 
 			q_lin = _mass*_p_b_dot;
 			q_ang = _M*_eta_b_dot;
@@ -361,7 +356,7 @@ void passivity_based_controller::ctrl_loop() {
 		//	cout << "_est_dist_ang: " << endl << _est_dist_ang << endl << endl;
 		}
 
-		if (time <= takeoff_time){						//TAKE OFF
+		if (time <= takeoff_time){						//Take off
 			for (int i = 0 ; i < motor_number ; i++){
 	    		act_msg.angular_velocities[i] = init_prop_speed;	
 			}
@@ -370,7 +365,7 @@ void passivity_based_controller::ctrl_loop() {
 		}
 
 
-		if (time > takeoff_time){						//CONTROL LOOP
+		if (time > takeoff_time){						//Control loop
 			/*
 			cout << "p_b:" << _p_b << endl << endl;
 			cout << "p_b_dot:" << _p_b_dot << endl << endl;
@@ -383,6 +378,7 @@ void passivity_based_controller::ctrl_loop() {
 			cout << "control input: " << endl << control_input << endl << endl;
 			*/
 
+			// outer loop //
 			e_p = _p_b - _pos_ref;
 			e_p_dot = _p_b_dot - _pos_ref_dot;
 			e_p_int = e_p_int + e_p*Ts;
@@ -391,6 +387,7 @@ void passivity_based_controller::ctrl_loop() {
 			_u_T = _mass*sqrt(mu_d(0)*mu_d(0) + mu_d(1)*mu_d(1) + (mu_d(2)-gravity)*(mu_d(2)-gravity));
 
 
+			// second order filters //
 
 			phi_ref = asin( _mass/_u_T*( mu_d(1)*cos(_eta_ref(2)) - mu_d(0)*sin(_eta_ref(2)) ) );
 			phi_ref_dot = (phi_ref-phi_ref_old)/Ts;  // Ts=0.01
@@ -411,7 +408,10 @@ void passivity_based_controller::ctrl_loop() {
 			theta_ref_dot_dot_old_f = theta_ref_dot_dot_f;
 			theta_ref_dot_dot_old = theta_ref_dot_dot;		
 
-
+			phi_ref_old = phi_ref;
+			theta_ref_old = theta_ref;
+			phi_ref_dot_old = phi_ref_dot;
+			theta_ref_dot_old = theta_ref_dot;		
 
 			_eta_ref(0) = phi_ref;
 			_eta_ref(1) = theta_ref;
@@ -419,6 +419,8 @@ void passivity_based_controller::ctrl_loop() {
 			_eta_ref_dot(1) = theta_ref_dot;
 			_eta_ref_dot_dot(0) = phi_ref_dot_dot_f;
 			_eta_ref_dot_dot(1) = theta_ref_dot_dot_f;				
+
+			// inner loop //
 
 			e_eta = _eta_b - _eta_ref;
 			e_eta_dot = _eta_b_dot - _eta_ref_dot;
@@ -429,11 +431,8 @@ void passivity_based_controller::ctrl_loop() {
 			v_eta = e_eta_dot + _sigma*e_eta;
 
 			_tau_b = (_Q.transpose()).inverse()*(_M*eta_r_dot_dot + _C*eta_r_dot -_est_dist_ang -_D_o*v_eta - _K_o*e_eta  );
-
-			phi_ref_old = phi_ref;
-			theta_ref_old = theta_ref;
-			phi_ref_dot_old = phi_ref_dot;
-			theta_ref_dot_old = theta_ref_dot;		
+	
+			// control allocation // 
 
 			control_input(0) = _u_T;
 			control_input(1) = _tau_b(0);
@@ -452,12 +451,14 @@ void passivity_based_controller::ctrl_loop() {
 					act_msg.angular_velocities[i] = 0;
 				}
 			}
-				//FOR DATA LOGGING
 
-			if (_first_ref == true &&  _log_time < 30){
+		/*	//for data logging
+			if (_first_ref == true &&  _log_time < 60){
 				log_data();			
 				_log_time = _log_time + Ts;	
 			}	
+			cout << _log_time << endl;
+		*/
 
 			_act_pub.publish(act_msg);
 		}
@@ -471,7 +472,7 @@ void passivity_based_controller::ctrl_loop() {
 			torque.y = 0.0;
 			torque.z = 0.02;
 			geometry_msgs::Wrench wrench;
-			wrench.force.x = force.x*std::min(time/takeoff_time , 1.0);
+			wrench.force.x = force.x*std::min(time/takeoff_time , 1.0);			// apply disturbance that is linear with time, then saturated at the end of take off phase
 			wrench.force.y = force.y*std::min(time/takeoff_time , 1.0);
 			wrench.force.z = force.z*std::min(time/takeoff_time , 1.0);
 			wrench.torque.x = torque.x*std::min(time/takeoff_time , 1.0);
@@ -487,11 +488,9 @@ void passivity_based_controller::ctrl_loop() {
 
 }
 
+//	for data logging //
 
 void passivity_based_controller::empty_txt(){
-
-    // "svuota" i file di testo
-
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 	
     ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
@@ -588,7 +587,7 @@ void passivity_based_controller::empty_txt(){
 
 
 void passivity_based_controller::log_data(){
-	cout << "logging" << endl;
+	//cout << "logging" << endl;
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 
 	ofstream file_x(pkg_loc + "/data/pos_x.txt",std::ios_base::app);
@@ -686,7 +685,7 @@ void passivity_based_controller::log_data(){
 
 
 void passivity_based_controller::run() {
-	boost::thread ctrl_loop_t ( &passivity_based_controller::ctrl_loop, this);
+	boost::thread ctrl_loop_t ( &passivity_based_controller::ctrl_loop, this);     //starts the control loop thread
 	ros::spin();	
 }
 
