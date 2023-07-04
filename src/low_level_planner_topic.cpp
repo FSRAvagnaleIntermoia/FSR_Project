@@ -63,7 +63,7 @@ low_level_planner::low_level_planner(){
 	_y0 = 0;
 	_z0 = -1;
 	_psi0 = 0;
-	_ttot = 20;
+	_ttot = 10;
 
 	_waypoints.resize(3,1);		//initialize the matrix as one column
 	_waypoints.setZero();

@@ -1,46 +1,37 @@
 #include "ros/ros.h"
-#include "mav_msgs/Actuators.h"
-#include "nav_msgs/Odometry.h"
-#include "sensor_msgs/Imu.h"
 #include "Eigen/Dense"
-#include "std_msgs/Float64.h"
 #include "std_msgs/Float64MultiArray.h"
 #include "boost/thread.hpp"
-//Include tf libraries							
-#include "tf2_msgs/TFMessage.h"
-#include "tf/transform_listener.h"
 #include <gazebo_msgs/SpawnModel.h>
-#include <fstream>
 #include "ros/package.h"
-//const double Ts = 0.01;
-
-const int obstacle_array_size = 7;
+#include <fstream>
 
 using namespace std;
 
+const int obstacle_array_size = 7; 	// number of obstacles
+
+
 struct obstacle{
-	Eigen::Vector3d pos_obs;
-	double _eta_obs_i;
-	double radius;
+	Eigen::Vector3d pos_obs;		// center of the columns
+	double _eta_obs_i;				// range of influnce
+	double radius;					// radius of the columns
 };
 
 class rrt_planner {
 	public:
 		rrt_planner();	
+		void rrt_planner_loop();	
+		void run();
 
 		void init_obstacles();
 		bool collision_check_line(Eigen::Vector4d q1 , Eigen::Vector3d q2 );
 
-		void rrt_planner_loop();	
-		void run();
+		//for graphic representation
 		void spawnNode( Eigen::Vector3d point , int node_number , int type);
 		void spawnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number);
 		void spawnSolnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number);
 
 
-		Eigen::Vector3d attractive_force_calc();
-		Eigen::Vector3d repulsive_force_calc( double x_obs , double y_obs, double z_obs ,double eta_obs_i , double radius_obstacle);
-		
 	private:
 		ros::NodeHandle _nh;
 
@@ -53,17 +44,19 @@ class rrt_planner {
 		double _delta;
 		double _iter_number;
 
-		double _xmin, _xmax, _ymin, _ymax, _zmin, _zmax;
+		double _xmin, _xmax, _ymin, _ymax, _zmin, _zmax;	//bounds of the environment
 
-		obstacle obstacle_array[obstacle_array_size];
-
-		int rate;
+		obstacle obstacle_array[obstacle_array_size];		//array of all obstacles
 };
 
 
 
 
 rrt_planner::rrt_planner(){
+	_waypoint_pub = _nh.advertise<std_msgs::Float64MultiArray>("/high_level_planner/waypoints", 1);
+
+	//parameters initialization
+
 	_start_pos[0] = 0;
 	_start_pos[1] = 0;
 	_start_pos[2] = -1;
@@ -71,8 +64,6 @@ rrt_planner::rrt_planner(){
 	_goal_pos[0] = 5;
 	_goal_pos[1] = -7;
 	_goal_pos[2] = -2;
-
-	_waypoint_pub = _nh.advertise<std_msgs::Float64MultiArray>("/high_level_planner/waypoints", 1);
 
 	init_obstacles();
 
@@ -85,8 +76,6 @@ rrt_planner::rrt_planner(){
 	_ymax = 0;
 	_zmin = -5;
 	_zmax = -0.5;
-
-
 }
 
 void rrt_planner::init_obstacles(){
@@ -120,6 +109,182 @@ void rrt_planner::init_obstacles(){
 	obstacle_array[6].radius = 0.5;
 }
 
+bool rrt_planner::collision_check_line(Eigen::Vector4d q1 , Eigen::Vector3d q2 ){
+	bool collision = false;
+	double drone_collision_range = 0.215*2; //2 times the arm length to have a safety margin
+	double x,y,z;
+	Eigen::Vector3d direction;
+	double distance = (q2.block<3,1>(0,0) - q1.block<3,1>(0,0)).norm();
+	direction = (q2.block<3,1>(0,0) - q1.block<3,1>(0,0));
+	direction.normalize();
+	double step_size = 0.1;
+	double step = step_size;
+
+	while ( ( step < distance ) && !collision ){
+		x = q1(0) + direction(0)*step;
+		y = q1(1) + direction(1)*step;
+		z = q1(2) + direction(2)*step;
+
+		for (int i = 0 ; i<obstacle_array_size ; i++){
+			if ( (pow(x-obstacle_array[i].pos_obs(0),2) + (pow(y-obstacle_array[i].pos_obs(1),2))) <  pow(obstacle_array[i].radius + drone_collision_range,2) )	{			//radius + arm length		
+				std::cout << "collision" << endl;
+				collision = true;
+				return true;
+			}
+			if ( (q2(0)>_xmax) || (q2(0)<_xmin) || (q2(1)>_ymax)  || q2(1)<_ymin || q2(2)>_zmax || q2(2)<_zmin ){
+				std::cout << "out of bound" << endl;
+				collision = true;
+				return true;				
+			}
+		}
+		step = step + step_size;
+	}
+	return false;
+}
+
+
+void rrt_planner::rrt_planner_loop(){
+
+	_roadmap.setZero();
+	_roadmap.conservativeResize(4,1);		//initialize the roadmapa as 4 rows 1 column matrix  
+	_roadmap.block<3,1>(0,0) = _start_pos;	//assign the start position to the roadmap
+	_roadmap(3) = -1;						//to specify that the start position does not have a parent node
+
+	bool finish;
+	int iter = _iter_number;				//initialize the number of iterations
+
+	double min_dist , dist;
+	int min_index;
+
+	Eigen::Vector3d q_rand , q_new;
+	Eigen::Vector4d q_near;
+
+	std_msgs::Float64MultiArray waypoints_msg;	//initialize the waypoint message
+   	waypoints_msg.layout.dim.resize(1);	
+
+	srand (time(NULL));		//extract random numbers
+    double rx , ry, rz; 
+
+
+	while(ros::ok()){
+		std::cout << "Insert x reference" << endl;
+		std::cin >> _goal_pos[0];
+		std::cout << "Insert y reference" << endl;
+		std::cin >> _goal_pos[1];
+		std::cout << "Insert z reference" << endl;
+		std::cin >> _goal_pos[2];
+
+		std::cout << "Trying with " << iter << " iterations" << endl;
+		finish = false;
+		iter = _iter_number;
+		while(!finish){
+
+			for( int i = 0 ; i < iter ; i++){		//extract q_rand from uniform distribution, within the bounds
+				rx =  (rand() / (double)RAND_MAX) * (_xmax - _xmin) + _xmin;
+				ry =  (rand() / (double)RAND_MAX) * (_ymax - _ymin) + _ymin;
+				rz =  (rand() / (double)RAND_MAX) * (_zmax - _zmin) + _zmin;
+				q_rand << rx,ry,rz ;
+
+
+				min_dist = 1000000;		//find the node q_near with the minimum distance from q_rand
+				min_index = -1;
+				for(int j = 0 ; j <_roadmap.cols() ; j++){
+					dist = ( _roadmap.block<3,1>(0,j)  - q_rand ).norm();
+					if (dist < min_dist){
+						min_dist = dist;
+						min_index = j;
+					}
+				}
+				q_near = _roadmap.block<4,1>(0,min_index);
+
+				q_new = (q_near.block<3,1>(0,0) + (q_rand - q_near.block<3,1>(0,0))/min_dist*_delta  );	// q_new is at a distance delta from q_near
+
+				if (collision_check_line(q_near,q_new) == false){		//if there is no collision in the line from q_near to q_new
+					_roadmap.conservativeResize(4,_roadmap.cols()+1);		//add q_new to the roadmap
+					_roadmap.block<3,1>(0,_roadmap.cols()-1) = q_new;
+					_roadmap(3,_roadmap.cols()-1) = min_index;				//save q_near as parent of q_new
+				}
+			}
+
+			min_dist = 1000000;		//find the node q_near with the minimum distance from goal
+			min_index = -1;
+			for(int j = 0 ; j <_roadmap.cols() ; j++){
+				dist = ( _roadmap.block<3,1>(0,j)  - _goal_pos ).norm();
+				std::cout << "waypoint number: "<< j << " dist: " << dist << endl;
+				if (dist < min_dist){
+					min_dist = dist;
+					min_index = j;
+				}
+			}
+			q_near = _roadmap.block<4,1>(0,min_index);
+
+			if (collision_check_line(q_near,_goal_pos) == false){  //if there is no collision in the line from q_near to goal
+				_roadmap.conservativeResize(4,_roadmap.cols()+1);	//add goal to the roadmap
+				_roadmap.block<3,1>(0,_roadmap.cols()-1) = _goal_pos;
+				_roadmap(3,_roadmap.cols()-1) = min_index;			//save q_near as parent of goal
+				finish = true;
+			}
+			else{
+				iter = iter + 2;
+			    std::cout << "Failure, now trying with "  << iter << "iterations" << endl;
+			}	
+		}
+
+		std::cout << "Success" << endl;
+
+		// graphics: spawn the graphical representation of the roadmap with nodes and arrows
+		Eigen::Vector4d node;
+		int parent_id;
+		for (int i = 1 ; i < _roadmap.cols() ; i++){
+			node = _roadmap.block<4,1>(0,i);
+			parent_id = _roadmap(3,i);	
+			if ( i != _roadmap.cols()-1 ){
+				spawnNode( node.block<3,1>(0,0), i , 0);		//does not spawn goal
+			}
+			if (parent_id != -1){
+				spawnArrow( node.block<3,1>(0,0) , _roadmap.block<3,1>(0,parent_id) , i);
+			}
+		}
+		spawnNode(_goal_pos , 0 , 1);
+
+		
+
+		// build a matrix that contains all the points belonging to the path from start to goal
+		Eigen::MatrixXd soln(3,1);
+		soln.block<3,1>(0,0) = _goal_pos; 			//starts from goal node and goes backward until the start
+
+		int parent = min_index;			//initialize parent node as the parent of the goal
+		int k = 1;	
+		do{
+			soln.conservativeResize(3,k+1);
+			soln.block<3,1>(0,k) = _roadmap.block<3,1>(0,parent);		
+			parent = _roadmap(3,parent);
+			k++;
+		}while (parent != -1);			//fill the soln matrix from goal to start
+
+
+
+		//graphics: spawn the arrows of the solution path
+		for (int i = 0 ; i < soln.cols()-1 ; i++){
+			spawnSolnArrow(  soln.block<3,1>(0,i) , soln.block<3,1>(0,i+1) , i);
+		}
+
+
+		//publish the obtained solution as a list of waypoints, towards the low level planner
+		waypoints_msg.layout.dim[0].size = soln.cols()-1; 
+		for (int i=k-2 ; i>=0 ; i--){
+			std::cout << "node " << k-1-i << " : " << soln.block<3,1>(0,i) << endl;
+			waypoints_msg.data.push_back(soln(0,i));
+			waypoints_msg.data.push_back(soln(1,i));
+			waypoints_msg.data.push_back(soln(2,i));
+		}
+		_waypoint_pub.publish(waypoints_msg);
+	}
+}
+
+
+
+//graphics: calls a gazebo service to spawn node in the selected position
 void rrt_planner::spawnNode( Eigen::Vector3d point , int node_number, int type){			//type 0->node type 1->goal
     ros::service::waitForService("/gazebo/spawn_urdf_model");
     ros::ServiceClient spawn_model_client = _nh.serviceClient<gazebo_msgs::SpawnModel>("/gazebo/spawn_urdf_model");
@@ -166,7 +331,7 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 
 
 
-
+//graphics: calls a gazebo service to spawn arrow in the selected position and orientation
 void rrt_planner::spawnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_point , int arrow_number){
     ros::NodeHandle nh;
     ros::ServiceClient spawn_model_client = nh.serviceClient<gazebo_msgs::SpawnModel>("/gazebo/spawn_urdf_model");
@@ -193,10 +358,6 @@ void rrt_planner::spawnArrow(Eigen::Vector3d start_point, Eigen::Vector3d end_po
     if (pos != std::string::npos){
         model_xml.replace(pos, length_placeholder.length(), length_string);
 	}
-
-
-
-
 
     length_placeholder = "0.555";  // Placeholder length in the URDF model
     length_string = "" + std::to_string(length/2);
@@ -321,211 +482,6 @@ void rrt_planner::spawnSolnArrow(Eigen::Vector3d start_point, Eigen::Vector3d en
         ROS_ERROR("Failed to spawn arrow.");
     }
 }
-
-
-
-
-
-bool rrt_planner::collision_check_line(Eigen::Vector4d q1 , Eigen::Vector3d q2 ){
-	bool collision = false;
-	double drone_collision_range = 0.215*2; //arm length*2
-	double x,y,z;
-	Eigen::Vector3d d;
-	d = (q2.block<3,1>(0,0) - q1.block<3,1>(0,0))/(q2.block<3,1>(0,0) - q1.block<3,1>(0,0)).norm();
-	double k = 0.1;
-
-	while ( ( k < (q2.block<3,1>(0,0) - q1.block<3,1>(0,0)).norm() ) && !collision ){
-		x = q1(0) + d(0)*k;
-		y = q1(1) + d(1)*k;
-		z = q1(2) + d(2)*k;
-
-//		std::cout << x << endl << y << endl << z << endl << endl;
-
-		for (int i = 0 ; i<obstacle_array_size ; i++){
-			if ( (pow(x-obstacle_array[i].pos_obs(0),2) + (pow(y-obstacle_array[i].pos_obs(1),2))) <  pow(obstacle_array[i].radius + drone_collision_range,2) )	{			//radius + arm length		
-				std::cout << "collision" << endl;
-				collision = true;
-				return true;
-			}
-			if ( (q2(0)>_xmax) || (q2(0)<_xmin) || (q2(1)>_ymax)  || q2(1)<_ymin || q2(2)>_zmax || q2(2)<_zmin ){
-				std::cout << "out of bound" << endl;
-				collision = true;
-				return true;				
-			}
-		}
-//		std::cout << "k: " << k << endl;
-		k = k + 0.1;
-	}
-	return false;
-}
-
-
-void rrt_planner::rrt_planner_loop(){
-
-	_roadmap.setZero();
-	_roadmap.conservativeResize(4,1);
-	_roadmap.block<3,1>(0,0) = _start_pos;
-	_roadmap(3) = -1;
-
-	bool finish = false;
-	int iter = _iter_number;
-
-    double rx , ry, rz; rx =  (rand() / (double)RAND_MAX) * (10 - 0) + 0;
-
-	double min_dist , dist;
-	int min_index;
-
-	Eigen::Vector3d q_rand , q_new;
-	Eigen::Vector4d q_near;
-//	Eigen::MatrixXd soln(3,1);
-
-	std_msgs::Float64MultiArray waypoints_msg;
-   	waypoints_msg.layout.dim.resize(1);	
-
-//	srand (time(NULL));
-	srand(2022);
-//	srand(1);
-
-
-	while(ros::ok()){
-
-
-		std::cout << "Insert x reference" << endl;
-		std::cin >> _goal_pos[0];
-		std::cout << "Insert y reference" << endl;
-		std::cin >> _goal_pos[1];
-		std::cout << "Insert z reference" << endl;
-		std::cin >> _goal_pos[2];
-
-		std::cout << "Trying with " << iter << " iterations" << endl;
-		finish = false;
-		iter = _iter_number;
-		while(!finish){
-
-			for( int i = 0 ; i < iter ; i++){
-				rx =  (rand() / (double)RAND_MAX) * (_xmax - _xmin) + _xmin;
-				ry =  (rand() / (double)RAND_MAX) * (_ymax - _ymin) + _ymin;
-				rz =  (rand() / (double)RAND_MAX) * (_zmax - _zmin) + _zmin;
-				q_rand << rx,ry,rz ;
-		//		std::cout << "q_rand: " << q_rand << endl;
-
-				min_dist = 1000000;
-				min_index = -1;
-				for(int j = 0 ; j <_roadmap.cols() ; j++){
-					dist = ( _roadmap.block<3,1>(0,j)  - q_rand ).norm();
-					if (dist < min_dist){
-						min_dist = dist;
-						min_index = j;
-					}
-				}
-		//		std::cout << "min dist:" << min_dist << endl;				
-				q_near = _roadmap.block<4,1>(0,min_index);
-				q_new = (q_near.block<3,1>(0,0) + (q_rand - q_near.block<3,1>(0,0))/min_dist*_delta  );
-
-				if (collision_check_line(q_near,q_new) == false){
-					_roadmap.conservativeResize(4,_roadmap.cols()+1);
-					_roadmap.block<3,1>(0,_roadmap.cols()-1) = q_new;
-					_roadmap(3,_roadmap.cols()-1) = min_index;
-				}
-		//		std::cout << "q_near: " << q_near << endl;
-		//		std::cout << "q_new: " << q_new << endl<<endl;
-			}
-
-			min_dist = 1000000;
-			min_index = -1;
-			for(int j = 0 ; j <_roadmap.cols() ; j++){
-				dist = ( _roadmap.block<3,1>(0,j)  - _goal_pos ).norm();
-				std::cout << "waypoint number: "<< j << " dist: " << dist << endl;
-				if (dist < min_dist){
-					min_dist = dist;
-					min_index = j;
-				}
-			}
-			q_near = _roadmap.block<4,1>(0,min_index);
-
-			if (collision_check_line(q_near,_goal_pos) == false){
-				_roadmap.conservativeResize(4,_roadmap.cols()+1);
-				_roadmap.block<3,1>(0,_roadmap.cols()-1) = _goal_pos;
-				_roadmap(3,_roadmap.cols()-1) = min_index;
-				finish = true;
-			}
-			else{
-				iter = iter + 2;
-			    std::cout << "Failure, now trying with "  << iter << "iterations" << endl;
-			}	
-		}
-
-
-
-		std::cout << "Success !!!" << endl;
-
-		Eigen::Vector4d node;
-		int parent_id;
-		for (int i = 1 ; i < _roadmap.cols() ; i++){
-			node = _roadmap.block<4,1>(0,i);
-			parent_id = _roadmap(3,i);	
-			if ( i != _roadmap.cols()-1 ){
-				spawnNode( node.block<3,1>(0,0), i , 0);		//does not spawn goal
-			}
-			if (parent_id != -1){
-				spawnArrow( node.block<3,1>(0,0) , _roadmap.block<3,1>(0,parent_id) , i);
-			}
-		}
-		spawnNode(_goal_pos , 0 , 1);
-
-
-
-		Eigen::MatrixXd soln(3,1);
-		soln.block<3,1>(0,0) = _goal_pos; 
-		std::cout << "soln:" << soln << endl;
-
-
-		int parent = min_index;
-		int k = 1;
-		std::cout << "parent: " << parent << endl;	
-		std::cout << "roadmap: " << _roadmap << endl;			
-		do{
-			soln.conservativeResize(3,k+1);
-			soln.block<3,1>(0,k) = _roadmap.block<3,1>(0,parent);		
-			parent = _roadmap(3,parent);
-			k++;
-		}while (parent != -1);
-
-
-
-
-		for (int i = 0 ; i < soln.cols()-1 ; i++){
-			spawnSolnArrow(  soln.block<3,1>(0,i) , soln.block<3,1>(0,i+1) , i);
-		}
-
-
-		waypoints_msg.layout.dim[0].size = soln.cols()-1; 
-
-
-		for (int i=k-2 ; i>=0 ; i--){
-			std::cout << "node " << k-1-i << " : " << soln.block<3,1>(0,i) << endl;
-			waypoints_msg.data.push_back(soln(0,i));
-			waypoints_msg.data.push_back(soln(1,i));
-			waypoints_msg.data.push_back(soln(2,i));
-		}
-	//	std::cout << waypoints_msg << endl;
-		_waypoint_pub.publish(waypoints_msg);
-
-		_start_pos(0) = _goal_pos[0];
-		_start_pos(1) = _goal_pos[1];
-		_start_pos(2) = _goal_pos[2];
-
-
-		_roadmap.setZero();
-		_roadmap.conservativeResize(4,1);
-		_roadmap.block<3,1>(0,0) = _start_pos;
-		_roadmap(3) = -1;
-	//	string str;
-	//	std::getline(cin,str);
-
-	}
-}
-
 
 void rrt_planner::run() {
 	boost::thread rrt_planner_loop_t ( &rrt_planner::rrt_planner_loop, this);
