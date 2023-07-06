@@ -130,7 +130,6 @@ void artificial_potential_planner::init_obstacles(){
 void artificial_potential_planner::odom_callback( nav_msgs::Odometry odom ) {
 	// to read current position
 	Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
-	Eigen::Vector3d vel_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z); 
 	
 	Eigen::Matrix3d R_enu2ned;
 	R_enu2ned << 1,0,0,0,-1,0,0,0,-1;
