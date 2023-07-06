@@ -32,24 +32,24 @@ class geometric_controller {
 	public:
 		geometric_controller();			
 		void ctrl_loop();
-        void run();
-
+		void run();
+		
 		void ref_callback(std_msgs::Float64MultiArray msg);
-        void odom_callback( nav_msgs::Odometry odom );
+		void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
-
-
+		
+		
 		void empty_txt();
 		void log_data();
 
 	private:
 		ros::NodeHandle _nh;
 
-        ros::Subscriber _odom_sub;
-        ros::Subscriber _imu_sub;	
+		ros::Subscriber _odom_sub;
+		ros::Subscriber _imu_sub;	
 		ros::Subscriber _ref_sub;
-
-        ros::Publisher _act_pub;
+		
+		ros::Publisher _act_pub;
 
 		Eigen::Vector3d _pos_ref;
 		Eigen::Vector3d	_pos_ref_dot;
@@ -59,9 +59,9 @@ class geometric_controller {
 		double _psi_ref;
 		double _psi_ref_dot;
 		double _psi_ref_dot_dot;
-
+		
 		Eigen::Matrix3d _Rb;			//expresses body orientation in world frame
-	    Eigen::Matrix3d _R_enu2ned;		//to transform from ENU to NED frames
+		Eigen::Matrix3d _R_enu2ned;		//to transform from ENU to NED frames
 
 
 		Eigen::Matrix3d _Ib;
@@ -113,9 +113,9 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 
 	_allocation_matrix.resize(4,motor_number);		//4x6 allocation matrix
 	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
-						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
-						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
-						C_Q, -C_Q, C_Q, -C_Q, C_Q, -C_Q;
+				C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
+				C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
+				C_Q, -C_Q, C_Q, -C_Q, C_Q, -C_Q;
 
 
 	_first_imu = false;
@@ -148,8 +148,8 @@ geometric_controller::geometric_controller() : _pos_ref(0,0,-1) , _psi_ref(0) , 
 Eigen::Matrix3d skew(Eigen::Vector3d v){
 	Eigen::Matrix3d skew;
 	skew <<    0 , -v(2) , v(1),
-			 v(2) , 0   , -v(0),
-			-v(1) , v(0) ,    0;
+		 v(2) , 0   , -v(0),
+		-v(1) , v(0) ,    0;
 	return skew;
 }
 
@@ -180,12 +180,12 @@ void geometric_controller::ref_callback( std_msgs::Float64MultiArray msg){
 
 void geometric_controller::odom_callback( nav_msgs::Odometry odom ) {
 	//reads position and linear velocity
-    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world-ENU frame
-    Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body-ENU frame
+	Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world-ENU frame
+	Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body-ENU frame
 	
-    _p_b = _R_enu2ned*pos_enu;							//transform in world-NED frame
+	_p_b = _R_enu2ned*pos_enu;							//transform in world-NED frame
 	_p_b_dot = _Rb*_R_enu2ned*vel_b_enu;  				//transform in world-NED frame (first in body-NED then in world-NED)	
-
+	
 	_first_odom = true;
 
 }
@@ -197,7 +197,7 @@ void geometric_controller::imu_callback ( sensor_msgs::Imu imu ){
 	
 	Eigen::Quaterniond quat(imu.orientation.w,imu.orientation.x,imu.orientation.y,imu.orientation.z);
 	Eigen::Matrix3d R = quat.toRotationMatrix();
-    _Rb = _R_enu2ned.transpose()*R*_R_enu2ned;
+	_Rb = _R_enu2ned.transpose()*R*_R_enu2ned;
 	_first_imu = true;
 }
 
@@ -205,8 +205,8 @@ void geometric_controller::ctrl_loop() {
 
 	ros::Rate rate(100);						//100 Hz frequency
 
-    mav_msgs::Actuators act_msg;						//initialize motor command
-    act_msg.angular_velocities.resize(motor_number);		
+	mav_msgs::Actuators act_msg;						//initialize motor command
+	act_msg.angular_velocities.resize(motor_number);		
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 	angular_velocities_sq.setZero();
 
@@ -351,85 +351,85 @@ void geometric_controller::ctrl_loop() {
 void geometric_controller::empty_txt(){
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 	
-    ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
-    file_pos_x << "";
-    file_pos_x.close();
-    ofstream file_pos_y(pkg_loc + "/data/pos_y.txt");
-    file_pos_y << "";
-    file_pos_y.close();
-    ofstream file_pos_z(pkg_loc + "/data/pos_z.txt");
-    file_pos_z << "";
-    file_pos_z.close();
-
-    ofstream file_pos_x_ref(pkg_loc + "/data/pos_x_ref.txt");
-    file_pos_x_ref << "";
-    file_pos_x_ref.close();
-    ofstream file_pos_y_ref(pkg_loc + "/data/pos_y_ref.txt");
-    file_pos_y_ref << "";
-    file_pos_y_ref.close();
-    ofstream file_pos_z_ref(pkg_loc + "/data/pos_z_ref.txt");
-    file_pos_z_ref << "";
-    file_pos_z_ref.close();		
-    ofstream file_psi(pkg_loc + "/data/psi.txt");
-    file_psi << "";
-    file_psi.close();
-
-    ofstream file_pos_x_err(pkg_loc + "/data/pos_x_err.txt");
-    file_pos_x_err << "";
-    file_pos_x_err.close();
-    ofstream file_pos_y_err(pkg_loc + "/data/pos_y_err.txt");
-    file_pos_y_err << "";
-    file_pos_y_err.close();
-    ofstream file_pos_z_err(pkg_loc + "/data/pos_z_err.txt");
-    file_pos_z_err << "";
-    file_pos_z_err.close();		
-    ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt");
-    file_psi_ref << "";
-    file_psi_ref.close();				
+	ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
+	file_pos_x << "";
+	file_pos_x.close();
+	ofstream file_pos_y(pkg_loc + "/data/pos_y.txt");
+	file_pos_y << "";
+	file_pos_y.close();
+	ofstream file_pos_z(pkg_loc + "/data/pos_z.txt");
+	file_pos_z << "";
+	file_pos_z.close();
 	
-    ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt");
-    file_vel_x_err << "";
-    file_vel_x_err.close();
-    ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt");
-    file_vel_y_err << "";
-    file_vel_y_err.close();
-    ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt");
-    file_vel_z_err << "";
-    file_vel_z_err.close();
-
-    ofstream file_e_R_x(pkg_loc + "/data/e_R_x.txt");
-    file_e_R_x << "";
-    file_e_R_x.close();
-    ofstream file_e_R_y(pkg_loc + "/data/e_R_y.txt");
-    file_e_R_y << "";
-    file_e_R_y.close();
-    ofstream file_e_R_z(pkg_loc + "/data/e_R_z.txt");
-    file_e_R_z << "";
-    file_e_R_z.close();	
-
-    ofstream file_e_W_x(pkg_loc + "/data/e_W_x.txt");
-    file_e_W_x << "";
-    file_e_W_x.close();
-    ofstream file_e_W_y(pkg_loc + "/data/e_W_y.txt");
-    file_e_W_y << "";
-    file_e_W_y.close();
-    ofstream file_e_W_z(pkg_loc + "/data/e_W_z.txt");
-    file_e_W_z << "";
-    file_e_W_z.close();		
+	ofstream file_pos_x_ref(pkg_loc + "/data/pos_x_ref.txt");
+	file_pos_x_ref << "";
+	file_pos_x_ref.close();
+	ofstream file_pos_y_ref(pkg_loc + "/data/pos_y_ref.txt");
+	file_pos_y_ref << "";
+	file_pos_y_ref.close();
+	ofstream file_pos_z_ref(pkg_loc + "/data/pos_z_ref.txt");
+	file_pos_z_ref << "";
+	file_pos_z_ref.close();		
+	ofstream file_psi(pkg_loc + "/data/psi.txt");
+	file_psi << "";
+	file_psi.close();
 	
+	ofstream file_pos_x_err(pkg_loc + "/data/pos_x_err.txt");
+	file_pos_x_err << "";
+	file_pos_x_err.close();
+	ofstream file_pos_y_err(pkg_loc + "/data/pos_y_err.txt");
+	file_pos_y_err << "";
+	file_pos_y_err.close();
+	ofstream file_pos_z_err(pkg_loc + "/data/pos_z_err.txt");
+	file_pos_z_err << "";
+	file_pos_z_err.close();		
+	ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt");
+	file_psi_ref << "";
+	file_psi_ref.close();				
+	
+	ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt");
+	file_vel_x_err << "";
+	file_vel_x_err.close();
+	ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt");
+	file_vel_y_err << "";
+	file_vel_y_err.close();
+	ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt");
+	file_vel_z_err << "";
+	file_vel_z_err.close();
+	
+	ofstream file_e_R_x(pkg_loc + "/data/e_R_x.txt");
+	file_e_R_x << "";
+	file_e_R_x.close();
+	ofstream file_e_R_y(pkg_loc + "/data/e_R_y.txt");
+	file_e_R_y << "";
+	file_e_R_y.close();
+	ofstream file_e_R_z(pkg_loc + "/data/e_R_z.txt");
+	file_e_R_z << "";
+	file_e_R_z.close();	
 
-    ofstream file_uT(pkg_loc + "/data/uT.txt");
-    file_uT << "";
-    file_uT.close();
-    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt");
-    file_taub_x << "";
-    file_taub_x.close();
-    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt");
-    file_taub_y << "";
-    file_taub_y.close();
-    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt");
-    file_taub_z << "";
-    file_taub_z.close();			
+	ofstream file_e_W_x(pkg_loc + "/data/e_W_x.txt");
+	file_e_W_x << "";
+	file_e_W_x.close();
+	ofstream file_e_W_y(pkg_loc + "/data/e_W_y.txt");
+	file_e_W_y << "";
+	file_e_W_y.close();
+	ofstream file_e_W_z(pkg_loc + "/data/e_W_z.txt");
+	file_e_W_z << "";
+	file_e_W_z.close();		
+	
+	
+	ofstream file_uT(pkg_loc + "/data/uT.txt");
+	file_uT << "";
+	file_uT.close();
+	ofstream file_taub_x(pkg_loc + "/data/taub_x.txt");
+	file_taub_x << "";
+	file_taub_x.close();
+	ofstream file_taub_y(pkg_loc + "/data/taub_y.txt");
+	file_taub_y << "";
+	file_taub_y.close();
+	ofstream file_taub_z(pkg_loc + "/data/taub_z.txt");
+	file_taub_z << "";
+	file_taub_z.close();			
 
 }
 
@@ -483,39 +483,39 @@ void geometric_controller::log_data(){
 	ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt",std::ios_base::app);
 	file_vel_z_err << _p_b_dot(2)-_pos_ref_dot(2) <<endl;
 	file_vel_z_err.close();			
-
-    ofstream file_uT(pkg_loc + "/data/uT.txt",std::ios_base::app);
-    file_uT << _u_T << endl;
-    file_uT.close();
-    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt",std::ios_base::app);
-    file_taub_x << _tau_b(0) << endl;
-    file_taub_x.close();
-    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt",std::ios_base::app);
-    file_taub_y << _tau_b(1) << endl;
-    file_taub_y.close();
-    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt",std::ios_base::app);
-    file_taub_z << _tau_b(2) <<endl;
-    file_taub_z.close();		
-
-    ofstream file_e_R_x(pkg_loc + "/data/e_R_x.txt",std::ios_base::app);
-    file_e_R_x << e_R(0) << endl;
-    file_e_R_x.close();
-    ofstream file_e_R_y(pkg_loc + "/data/e_R_y.txt",std::ios_base::app);
-    file_e_R_y << e_R(1) << endl;
-    file_e_R_y.close();
-    ofstream file_e_R_z(pkg_loc + "/data/e_R_z.txt",std::ios_base::app);
-    file_e_R_z << e_R(2) << endl;
-    file_e_R_z.close();	
-
-    ofstream file_e_W_x(pkg_loc + "/data/e_W_x.txt",std::ios_base::app);
-    file_e_W_x << e_W(0) << endl;
-    file_e_W_x.close();
-    ofstream file_e_W_y(pkg_loc + "/data/e_W_y.txt",std::ios_base::app);
-    file_e_W_y << e_W(1) << endl;
-    file_e_W_y.close();
-    ofstream file_e_W_z(pkg_loc + "/data/e_W_z.txt",std::ios_base::app);
-    file_e_W_z << e_W(2) << endl;
-    file_e_W_z.close();		
+	
+	ofstream file_uT(pkg_loc + "/data/uT.txt",std::ios_base::app);
+	file_uT << _u_T << endl;
+	file_uT.close();
+	ofstream file_taub_x(pkg_loc + "/data/taub_x.txt",std::ios_base::app);
+	file_taub_x << _tau_b(0) << endl;
+	file_taub_x.close();
+	ofstream file_taub_y(pkg_loc + "/data/taub_y.txt",std::ios_base::app);
+	file_taub_y << _tau_b(1) << endl;
+	file_taub_y.close();
+	ofstream file_taub_z(pkg_loc + "/data/taub_z.txt",std::ios_base::app);
+	file_taub_z << _tau_b(2) <<endl;
+	file_taub_z.close();		
+	
+	ofstream file_e_R_x(pkg_loc + "/data/e_R_x.txt",std::ios_base::app);
+	file_e_R_x << e_R(0) << endl;
+	file_e_R_x.close();
+	ofstream file_e_R_y(pkg_loc + "/data/e_R_y.txt",std::ios_base::app);
+	file_e_R_y << e_R(1) << endl;
+	file_e_R_y.close();
+	ofstream file_e_R_z(pkg_loc + "/data/e_R_z.txt",std::ios_base::app);
+	file_e_R_z << e_R(2) << endl;
+	file_e_R_z.close();	
+	
+	ofstream file_e_W_x(pkg_loc + "/data/e_W_x.txt",std::ios_base::app);
+	file_e_W_x << e_W(0) << endl;
+	file_e_W_x.close();
+	ofstream file_e_W_y(pkg_loc + "/data/e_W_y.txt",std::ios_base::app);
+	file_e_W_y << e_W(1) << endl;
+	file_e_W_y.close();
+	ofstream file_e_W_z(pkg_loc + "/data/e_W_z.txt",std::ios_base::app);
+	file_e_W_z << e_W(2) << endl;
+	file_e_W_z.close();		
 
 }
 
