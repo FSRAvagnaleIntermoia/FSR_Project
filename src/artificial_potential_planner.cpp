@@ -41,7 +41,7 @@ class artificial_potential_planner {
 
 	private:
 		ros::NodeHandle _nh;
-        ros::Subscriber _odom_sub;
+       		ros::Subscriber _odom_sub;
 
 		ros::Publisher _ref_pub;
 		ros::Publisher _gazebo_pub;	//for graphics
@@ -79,7 +79,7 @@ artificial_potential_planner::artificial_potential_planner(){
 	_odom_sub = _nh.subscribe("/firefly/ground_truth/odometry", 0, &artificial_potential_planner::odom_callback, this);	
 
 	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
-    _gazebo_pub = _nh.advertise<gazebo_msgs::ModelState>("/gazebo/set_model_state", 1);
+    	_gazebo_pub = _nh.advertise<gazebo_msgs::ModelState>("/gazebo/set_model_state", 1);
 
 	//initialize parameters
 
@@ -129,13 +129,13 @@ void artificial_potential_planner::init_obstacles(){
 
 void artificial_potential_planner::odom_callback( nav_msgs::Odometry odom ) {
 	// to read current position
-    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
-    Eigen::Vector3d vel_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z); 
+	Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);
+	Eigen::Vector3d vel_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z); 
 	
 	Eigen::Matrix3d R_enu2ned;
 	R_enu2ned << 1,0,0,0,-1,0,0,0,-1;
 
-    _pos = R_enu2ned*pos_enu;		//transform from world-ENU in world-NED
+	_pos = R_enu2ned*pos_enu;		//transform from world-ENU in world-NED
 }
 
 
@@ -277,8 +277,8 @@ Eigen::Matrix3d skew(Eigen::Vector3d v){
 //graphics: draw the total force arrow in real time
 void artificial_potential_planner::setModelPose(const Eigen::Vector3d & force ) {
  	gazebo_msgs::ModelState stateMsg;
-		stateMsg.model_name = "total_force_arrow";
-		stateMsg.reference_frame = "world"; // Or any other reference frame you desire	
+	stateMsg.model_name = "total_force_arrow";
+	stateMsg.reference_frame = "world"; // Or any other reference frame you desire	
 	geometry_msgs::Pose pose;
 	if( force.norm() > 0.1){
 		Eigen::Vector3d x(1,0,0);
@@ -323,73 +323,73 @@ void artificial_potential_planner::setModelPose(const Eigen::Vector3d & force ) 
 void artificial_potential_planner::empty_txt(){
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 	
-    ofstream file_app_x(pkg_loc + "/data/app_x.txt");
-    file_app_x << "";
-    file_app_x.close();
-    ofstream file_app_y(pkg_loc + "/data/app_y.txt");
-    file_app_y << "";
-    file_app_y.close();
-    ofstream file_app_z(pkg_loc + "/data/app_z.txt");
-    file_app_z << "";
-    file_app_z.close();
-
-    ofstream file_app_x_dot(pkg_loc + "/data/app_x_dot.txt");
-    file_app_x_dot << "";
-    file_app_x_dot.close();
-    ofstream file_app_y_dot(pkg_loc + "/data/app_y_dot.txt");
-    file_app_y_dot << "";
-    file_app_y_dot.close();
-    ofstream file_app_z_dot(pkg_loc + "/data/app_z_dot.txt");
-    file_app_z_dot << "";
-    file_app_z_dot.close();
-
-    ofstream file_app_x_dot_dot(pkg_loc + "/data/app_x_dot_dot.txt");
-    file_app_x_dot_dot << "";
-    file_app_x_dot_dot.close();
-    ofstream file_app_y_dot_dot(pkg_loc + "/data/app_y_dot_dot.txt");
-    file_app_y_dot_dot << "";
-    file_app_y_dot_dot.close();
-    ofstream file_app_z_dot_dot(pkg_loc + "/data/app_z_dot_dot.txt");
-    file_app_z_dot_dot << "";
-    file_app_z_dot_dot.close();
+	ofstream file_app_x(pkg_loc + "/data/app_x.txt");
+	file_app_x << "";
+	file_app_x.close();
+	ofstream file_app_y(pkg_loc + "/data/app_y.txt");
+	file_app_y << "";
+	file_app_y.close();
+	ofstream file_app_z(pkg_loc + "/data/app_z.txt");
+	file_app_z << "";
+	file_app_z.close();
+	
+	ofstream file_app_x_dot(pkg_loc + "/data/app_x_dot.txt");
+	file_app_x_dot << "";
+	file_app_x_dot.close();
+	ofstream file_app_y_dot(pkg_loc + "/data/app_y_dot.txt");
+	file_app_y_dot << "";
+	file_app_y_dot.close();
+	ofstream file_app_z_dot(pkg_loc + "/data/app_z_dot.txt");
+	file_app_z_dot << "";
+	file_app_z_dot.close();
+	
+	ofstream file_app_x_dot_dot(pkg_loc + "/data/app_x_dot_dot.txt");
+	file_app_x_dot_dot << "";
+	file_app_x_dot_dot.close();
+	ofstream file_app_y_dot_dot(pkg_loc + "/data/app_y_dot_dot.txt");
+	file_app_y_dot_dot << "";
+	file_app_y_dot_dot.close();
+	ofstream file_app_z_dot_dot(pkg_loc + "/data/app_z_dot_dot.txt");
+	file_app_z_dot_dot << "";
+	file_app_z_dot_dot.close();
 
 }
 
 
 //for data logging
 void artificial_potential_planner::log_data(){
-//	cout << "logging" << endl;
+	//	cout << "logging" << endl;
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
-
-   ofstream file_app_x(pkg_loc + "/data/app_x.txt",std::ios_base::app);
-    file_app_x << p(0) << endl;
-    file_app_x.close();
-    ofstream file_app_y(pkg_loc + "/data/app_y.txt",std::ios_base::app);
-    file_app_y <<  p(1) << endl;
-    file_app_y.close();
-    ofstream file_app_z(pkg_loc + "/data/app_z.txt",std::ios_base::app);
-    file_app_z <<  p(2) << endl;
-    file_app_z.close();
-
-    ofstream file_app_x_dot(pkg_loc + "/data/app_x_dot.txt",std::ios_base::app);
-    file_app_x_dot << p_dot(0) << endl;
-    file_app_x_dot.close();
-    ofstream file_app_y_dot(pkg_loc + "/data/app_y_dot.txt",std::ios_base::app);
-    file_app_y_dot << p_dot(1) << endl;
-    file_app_y_dot.close();
-    ofstream file_app_z_dot(pkg_loc + "/data/app_z_dot.txt",std::ios_base::app);
-    file_app_z_dot << p_dot(2) << endl;
-    file_app_z_dot.close();
-
-    ofstream file_app_x_dot_dot(pkg_loc + "/data/app_x_dot_dot.txt",std::ios_base::app);
-    file_app_x_dot_dot << p_dot_dot_f(0) << endl;
-    file_app_x_dot_dot.close();
-    ofstream file_app_y_dot_dot(pkg_loc + "/data/app_y_dot_dot.txt",std::ios_base::app);
-    file_app_y_dot_dot << p_dot_dot_f(1) << endl;
-    file_app_y_dot_dot.close();
-    ofstream file_app_z_dot_dot(pkg_loc + "/data/app_z_dot_dot.txt",std::ios_base::app);
-    file_app_z_dot_dot << p_dot_dot_f(2) << endl;
-    file_app_z_dot_dot.close();
+	
+	ofstream file_app_x(pkg_loc + "/data/app_x.txt",std::ios_base::app);
+	file_app_x << p(0) << endl;
+	file_app_x.close();
+	ofstream file_app_y(pkg_loc + "/data/app_y.txt",std::ios_base::app);
+	file_app_y <<  p(1) << endl;
+	file_app_y.close();
+	ofstream file_app_z(pkg_loc + "/data/app_z.txt",std::ios_base::app);
+	file_app_z <<  p(2) << endl;
+	file_app_z.close();
+	
+	ofstream file_app_x_dot(pkg_loc + "/data/app_x_dot.txt",std::ios_base::app);
+	file_app_x_dot << p_dot(0) << endl;
+	file_app_x_dot.close();
+	ofstream file_app_y_dot(pkg_loc + "/data/app_y_dot.txt",std::ios_base::app);
+	file_app_y_dot << p_dot(1) << endl;
+	file_app_y_dot.close();
+	ofstream file_app_z_dot(pkg_loc + "/data/app_z_dot.txt",std::ios_base::app);
+	file_app_z_dot << p_dot(2) << endl;
+	file_app_z_dot.close();
+	
+	ofstream file_app_x_dot_dot(pkg_loc + "/data/app_x_dot_dot.txt",std::ios_base::app);
+	file_app_x_dot_dot << p_dot_dot_f(0) << endl;
+	file_app_x_dot_dot.close();
+	ofstream file_app_y_dot_dot(pkg_loc + "/data/app_y_dot_dot.txt",std::ios_base::app);
+	file_app_y_dot_dot << p_dot_dot_f(1) << endl;
+	file_app_y_dot_dot.close();
+	ofstream file_app_z_dot_dot(pkg_loc + "/data/app_z_dot_dot.txt",std::ios_base::app);
+	file_app_z_dot_dot << p_dot_dot_f(2) << endl;
+	file_app_z_dot_dot.close();
 }
 
 
@@ -398,7 +398,6 @@ void artificial_potential_planner::log_data(){
 
 void artificial_potential_planner::run() {
 	boost::thread artificial_potential_planner_loop_t ( &artificial_potential_planner::artificial_potential_planner_loop, this);
-
 	ros::spin();	
 }
 
