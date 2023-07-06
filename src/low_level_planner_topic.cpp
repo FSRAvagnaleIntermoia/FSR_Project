@@ -56,15 +56,15 @@ class low_level_planner {
 low_level_planner::low_level_planner(){
 
 	_ref_pub = _nh.advertise<std_msgs::Float64MultiArray>("/low_level_planner/reference_trajectory", 1);
-
+	
 	_waypoint_sub = _nh.subscribe("/high_level_planner/waypoints", 0, &low_level_planner::waypoint_callback, this);	
-
+	
 	_x0 = 0;
 	_y0 = 0;
 	_z0 = -1;
 	_psi0 = 0;
 	_ttot = 10;
-
+	
 	_waypoints.resize(3,1);		//initialize the matrix as one column
 	_waypoints.setZero();
 	_first_waypoint = false;
@@ -159,34 +159,34 @@ void low_level_planner::low_level_planner_loop() {
 	
 	cout << "Waypoints acquired" << endl;
 	cout << "Trajectory start" << endl;
-		for ( int i = 0 ; i < _n_waypoints ; i++){
-			_xf = _waypoints(0,i);
-			_yf = _waypoints(1,i);
-			_zf = _waypoints(2,i);
-			_psif = 0;
-			cout << "Waypoint number: " << i+1 << endl;
-			cout << _xf << endl << _yf << endl << _zf << endl << endl;
-			init_trajectory(_ttot,_x0,_y0,_z0,_psi0,_xf,_yf,_zf,_psif);
+	for ( int i = 0 ; i < _n_waypoints ; i++){
+		_xf = _waypoints(0,i);
+		_yf = _waypoints(1,i);
+		_zf = _waypoints(2,i);
+		_psif = 0;
+		cout << "Waypoint number: " << i+1 << endl;
+		cout << _xf << endl << _yf << endl << _zf << endl << endl;
+		init_trajectory(_ttot,_x0,_y0,_z0,_psi0,_xf,_yf,_zf,_psif);
 
 		while (time_idx < _time_len){		//publish the reference at each time instant
+			
+			msg.data = { _x_ref(time_idx) , _y_ref(time_idx) , _z_ref(time_idx) , _psi_ref(time_idx) , 
+						_x_ref_dot(time_idx) , _y_ref_dot(time_idx) , _z_ref_dot(time_idx) , _psi_ref_dot(time_idx) , 
+						_x_ref_dot_dot(time_idx) , _y_ref_dot_dot(time_idx) , _z_ref_dot_dot(time_idx) , _psi_ref_dot_dot(time_idx) };
+	
+			_ref_pub.publish(msg);
+	
+			time_idx ++;	
+			rate.sleep();
+		}
 
-				msg.data = { _x_ref(time_idx) , _y_ref(time_idx) , _z_ref(time_idx) , _psi_ref(time_idx) , 
-							_x_ref_dot(time_idx) , _y_ref_dot(time_idx) , _z_ref_dot(time_idx) , _psi_ref_dot(time_idx) , 
-							_x_ref_dot_dot(time_idx) , _y_ref_dot_dot(time_idx) , _z_ref_dot_dot(time_idx) , _psi_ref_dot_dot(time_idx) };
 
-				_ref_pub.publish(msg);
+		_x0 = _xf;				//start a new trajectory from the last point
+		_y0 = _yf;
+		_z0 = _zf;
+		_psi0 = _psif;
 
-				time_idx ++;	
-				rate.sleep();
-			}
-
-
-			_x0 = _xf;				//start a new trajectory from the last point
-			_y0 = _yf;
-			_z0 = _zf;
-			_psi0 = _psif;
-
-			time_idx = 0;	
+		time_idx = 0;	
 
 		}
 		_first_waypoint  = false;	
