@@ -23,15 +23,15 @@ int main(int argc, char **argv) {
 	ros::NodeHandle nh;
 	ros::Publisher cmd_pub = nh.advertise<mav_msgs::Actuators>("/firefly/command/motor_speed", 1);
 
-    mav_msgs::Actuators act_msg;
-    act_msg.angular_velocities.resize(motor_number);
+	mav_msgs::Actuators act_msg;
+	 act_msg.angular_velocities.resize(motor_number);
 
 	Eigen::Matrix4Xd _allocation_matrix;
 	_allocation_matrix.resize(4,motor_number);
 	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
-						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
-						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
-						C_Q,  -C_Q, C_Q, -C_Q, C_Q, -C_Q;
+				C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
+				C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
+				C_Q,  -C_Q, C_Q, -C_Q, C_Q, -C_Q;
     
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 
