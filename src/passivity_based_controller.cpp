@@ -38,24 +38,24 @@ class passivity_based_controller {
 	public:
 		passivity_based_controller();			
 		void ctrl_loop();
-        void run();
-
+	        void run();
+	
 		void ref_callback(std_msgs::Float64MultiArray msg);
-        void odom_callback( nav_msgs::Odometry odom );
+		void odom_callback( nav_msgs::Odometry odom );
 		void imu_callback( sensor_msgs::Imu imu);
-
-
+	
+	
 		void empty_txt();
 		void log_data();
 
 	private:
 		ros::NodeHandle _nh;
 
-        ros::Subscriber _odom_sub;
-        ros::Subscriber _imu_sub;
+	        ros::Subscriber _odom_sub;
+        	ros::Subscriber _imu_sub;
 		ros::Subscriber _ref_sub;
 
-        ros::Publisher _act_pub;
+	        ros::Publisher _act_pub;
 
 		Eigen::Vector3d _pos_ref;
 		Eigen::Vector3d _eta_ref;
@@ -65,7 +65,7 @@ class passivity_based_controller {
 		Eigen::Vector3d _eta_ref_dot_dot;
 
 		Eigen::Matrix3d _Rb;			//expresses body orientation in world frame
-	    Eigen::Matrix3d _R_enu2ned;		//to transform from ENU to NED frames
+	   	Eigen::Matrix3d _R_enu2ned;		//to transform from ENU to NED frames
 		
 		Eigen::Matrix3d _Q;				//same definitions as seen in lectures
 		Eigen::Matrix3d _Q_dot;
@@ -128,9 +128,9 @@ passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _e
 
 	_allocation_matrix.resize(4,motor_number);		//4x6 allocation matrix
 	_allocation_matrix << C_T , C_T , C_T , C_T , C_T , C_T ,
-						C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
-						C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
-						C_Q,  -C_Q, C_Q,  -C_Q, C_Q, -C_Q;
+				C_T*arm_length*sin(M_PI/6),  C_T*arm_length,  C_T*arm_length*sin(M_PI/6), -C_T*arm_length*sin(M_PI/6), -C_T*arm_length, -C_T*arm_length*sin(M_PI/6),
+				C_T*arm_length*cos(M_PI/6),  0,  -C_T*arm_length*cos(M_PI/6),  -C_T*arm_length*cos(M_PI/6), 0, C_T*arm_length*cos(M_PI/6),
+				C_Q,  -C_Q, C_Q,  -C_Q, C_Q, -C_Q;
 
 
 	_first_imu = false;
@@ -175,8 +175,8 @@ passivity_based_controller::passivity_based_controller() : _pos_ref(0,0,-1) , _e
 Eigen::Matrix3d skew(Eigen::Vector3d v){
 	Eigen::Matrix3d skew;
 	skew <<    0 , -v(2) , v(1),
-			 v(2) , 0   , -v(0),
-			-v(1) , v(0) ,    0;
+		 v(2) , 0   , -v(0),
+		-v(1) , v(0) ,    0;
 	return skew;
 }
 
@@ -200,12 +200,12 @@ void passivity_based_controller::ref_callback( std_msgs::Float64MultiArray msg){
 
 void passivity_based_controller::odom_callback( nav_msgs::Odometry odom ) {
 	//reads position and linear velocity
-    Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world-ENU frame
-    Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body-ENU frame
+	Eigen::Vector3d pos_enu(odom.pose.pose.position.x,odom.pose.pose.position.y,odom.pose.pose.position.z);		//world-ENU frame
+	Eigen::Vector3d vel_b_enu(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.linear.z);   // The sensor gives the velocities in body-ENU frame
 	
-    _p_b = _R_enu2ned*pos_enu;							//transform in world-NED frame
+	_p_b = _R_enu2ned*pos_enu;							//transform in world-NED frame
 	_p_b_dot = _Rb*_R_enu2ned*vel_b_enu;  				//transform in world-NED frame (first in body-NED then in world-NED)	
-
+	
 	_first_odom = true;
 }
 
@@ -218,12 +218,12 @@ void passivity_based_controller::imu_callback ( sensor_msgs::Imu imu ){
 	
 	Eigen::Quaterniond quat(imu.orientation.w,imu.orientation.x,imu.orientation.y,imu.orientation.z);		//obtain orientation in ENU frame
 	Eigen::Matrix3d R = quat.toRotationMatrix();
-
-    _Rb = _R_enu2ned*R*_R_enu2ned.transpose();						//transform in NED frame
-
+	
+	_Rb = _R_enu2ned*R*_R_enu2ned.transpose();						//transform in NED frame
+	
 	psi = atan2( _Rb(1,0) , _Rb(0,0) );													//extract RPY angles
-    theta = atan2( -_Rb(2,0) , sqrt(_Rb(2,1)*_Rb(2,1) + _Rb(2,2)*_Rb(2,2)) );
-    phi = atan2( _Rb(2,1),_Rb(2,2) );
+	theta = atan2( -_Rb(2,0) , sqrt(_Rb(2,1)*_Rb(2,1) + _Rb(2,2)*_Rb(2,2)) );
+	phi = atan2( _Rb(2,1),_Rb(2,2) );
 
 	_eta_b(0) = phi;
 	_eta_b(1) = theta;
@@ -253,31 +253,31 @@ void passivity_based_controller::imu_callback ( sensor_msgs::Imu imu ){
 
 
 bool applyWrench( const geometry_msgs::Wrench& wrench) {	//apply disturbance
-    ros::NodeHandle nh;
-    ros::ServiceClient applyWrenchClient = nh.serviceClient<gazebo_msgs::ApplyBodyWrench>("/gazebo/apply_body_wrench");
-    gazebo_msgs::ApplyBodyWrench srv;
-
-    srv.request.body_name = "firefly/base_link";
-    srv.request.reference_frame = "world";
-    srv.request.reference_point.x = 0.0;
-    srv.request.reference_point.y = 0.0;
-    srv.request.reference_point.z = 0.0;
-    srv.request.wrench = wrench;
-    srv.request.wrench.force.y = -wrench.force.y;
-    srv.request.wrench.force.z = -wrench.force.z;
-    srv.request.wrench.torque.y = -wrench.torque.y;
-    srv.request.wrench.torque.z = -wrench.torque.z;
-    srv.request.start_time = ros::Time::now();
-    srv.request.duration = ros::Duration(0.01);
-
-    if (applyWrenchClient.call(srv) && srv.response.success){
-    //    ROS_INFO("Wrench applied successfully.");
-        return true;
-    }
-    else{
-        ROS_ERROR("Failed to apply wrench.");
-        return false;
-    }
+	ros::NodeHandle nh;
+	ros::ServiceClient applyWrenchClient = nh.serviceClient<gazebo_msgs::ApplyBodyWrench>("/gazebo/apply_body_wrench");
+	gazebo_msgs::ApplyBodyWrench srv;
+	
+	srv.request.body_name = "firefly/base_link";
+	srv.request.reference_frame = "world";
+	srv.request.reference_point.x = 0.0;
+	srv.request.reference_point.y = 0.0;
+	srv.request.reference_point.z = 0.0;
+	srv.request.wrench = wrench;
+	srv.request.wrench.force.y = -wrench.force.y;
+	srv.request.wrench.force.z = -wrench.force.z;
+	srv.request.wrench.torque.y = -wrench.torque.y;
+	srv.request.wrench.torque.z = -wrench.torque.z;
+	srv.request.start_time = ros::Time::now();
+	srv.request.duration = ros::Duration(0.01);
+	
+	if (applyWrenchClient.call(srv) && srv.response.success){
+	//    ROS_INFO("Wrench applied successfully.");
+	return true;
+	}
+	else{
+	ROS_ERROR("Failed to apply wrench.");
+	return false;
+	}
 }
 ///////////
 
@@ -288,7 +288,7 @@ void passivity_based_controller::ctrl_loop() {
 	ros::Rate rate(100);						//100 Hz frequency
     
 	mav_msgs::Actuators act_msg;						//initialize motor command
-    act_msg.angular_velocities.resize(motor_number);
+	act_msg.angular_velocities.resize(motor_number);
 	Eigen::VectorXd angular_velocities_sq(motor_number);
 	angular_velocities_sq.setZero();
 
@@ -332,11 +332,9 @@ void passivity_based_controller::ctrl_loop() {
 	double time = 0;
 	std::cout << "Take off" << endl;
 
-	while(ros::ok){
-
-		
+	while(ros::ok){		
 		if (enable_estimator){						//ESTIMATION: -> G=k0/(k0+s) transfer function for the estimator
-
+	
 			q_lin = _mass*_p_b_dot;
 			q_ang = _M*_eta_b_dot;
 			
@@ -345,10 +343,10 @@ void passivity_based_controller::ctrl_loop() {
 			
 			q_lin_est = q_lin_est + q_dot_lin_est*Ts;
 			q_ang_est = q_ang_est + q_dot_ang_est*Ts;
-
+	
 			_est_dist_lin = k0*(q_lin - q_lin_est);
 			_est_dist_ang = k0*(q_ang - q_ang_est);
-
+	
 		//	cout << "_est_dist_lin: " << endl << _est_dist_lin << endl;
 		//	cout << "_est_dist_ang: " << endl << _est_dist_ang << endl << endl;
 		}
@@ -490,96 +488,96 @@ void passivity_based_controller::ctrl_loop() {
 void passivity_based_controller::empty_txt(){
 	std::string pkg_loc = ros::package::getPath("fsr_pkg");
 	
-    ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
-    file_pos_x << "";
-    file_pos_x.close();
-    ofstream file_pos_y(pkg_loc + "/data/pos_y.txt");
-    file_pos_y << "";
-    file_pos_y.close();
-    ofstream file_pos_z(pkg_loc + "/data/pos_z.txt");
-    file_pos_z << "";
-    file_pos_z.close();
-    ofstream file_phi(pkg_loc + "/data/phi.txt");
-    file_phi << "";
-    file_phi.close();		
-    ofstream file_theta(pkg_loc + "/data/theta.txt");
-    file_theta << "";
-    file_theta.close();		
-    ofstream file_psi(pkg_loc + "/data/psi.txt");
-    file_psi << "";
-    file_psi.close();				
-
-    ofstream file_pos_x_ref(pkg_loc + "/data/pos_x_ref.txt");
-    file_pos_x_ref << "";
-    file_pos_x_ref.close();
-    ofstream file_pos_y_ref(pkg_loc + "/data/pos_y_ref.txt");
-    file_pos_y_ref << "";
-    file_pos_y_ref.close();
-    ofstream file_pos_z_ref(pkg_loc + "/data/pos_z_ref.txt");
-    file_pos_z_ref << "";
-    file_pos_z_ref.close();		
-    ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt");
-    file_psi_ref << "";
-    file_psi_ref.close();				
-
-    ofstream file_pos_x_err(pkg_loc + "/data/pos_x_err.txt");
-    file_pos_x_err << "";
-    file_pos_x_err.close();
-    ofstream file_pos_y_err(pkg_loc + "/data/pos_y_err.txt");
-    file_pos_y_err << "";
-    file_pos_y_err.close();
-    ofstream file_pos_z_err(pkg_loc + "/data/pos_z_err.txt");
-    file_pos_z_err << "";
-    file_pos_z_err.close();		
-    ofstream file_psi_err(pkg_loc + "/data/psi_err.txt");
-    file_psi_err << "";
-    file_psi_err.close();		
-
-    ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt");
-    file_vel_x_err << "";
-    file_vel_x_err.close();
-    ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt");
-    file_vel_y_err << "";
-    file_vel_y_err.close();
-    ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt");
-    file_vel_z_err << "";
-    file_vel_z_err.close();
-    ofstream file_vel_psi_err(pkg_loc + "/data/vel_psi_err.txt");
-    file_vel_psi_err << "";
-    file_vel_psi_err.close();	
-
-    ofstream file_uT(pkg_loc + "/data/uT.txt");
-    file_uT << "";
-    file_uT.close();
-    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt");
-    file_taub_x << "";
-    file_taub_x.close();
-    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt");
-    file_taub_y << "";
-    file_taub_y.close();
-    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt");
-    file_taub_z << "";
-    file_taub_z.close();			
-
-    ofstream file_est_dist_lin_x(pkg_loc + "/data/est_dist_lin_x.txt");
-    file_est_dist_lin_x << "";
-    file_est_dist_lin_x.close();
-    ofstream file_est_dist_lin_y(pkg_loc + "/data/est_dist_lin_y.txt");
-    file_est_dist_lin_y << "";
-    file_est_dist_lin_y.close();
-    ofstream file_est_dist_lin_z(pkg_loc + "/data/est_dist_lin_z.txt");
-    file_est_dist_lin_z << "";
-    file_est_dist_lin_z.close();
-
-    ofstream file_est_dist_ang_x(pkg_loc + "/data/est_dist_ang_x.txt");
-    file_est_dist_ang_x << "";
-    file_est_dist_ang_x.close();
-    ofstream file_est_dist_ang_y(pkg_loc + "/data/est_dist_ang_y.txt");
-    file_est_dist_ang_y << "";
-    file_est_dist_ang_y.close();
-    ofstream file_est_dist_ang_z(pkg_loc + "/data/est_dist_ang_z.txt");
-    file_est_dist_ang_z << "";
-    file_est_dist_ang_z.close();
+	ofstream file_pos_x(pkg_loc + "/data/pos_x.txt");
+	file_pos_x << "";
+	file_pos_x.close();
+	ofstream file_pos_y(pkg_loc + "/data/pos_y.txt");
+	file_pos_y << "";
+	file_pos_y.close();
+	ofstream file_pos_z(pkg_loc + "/data/pos_z.txt");
+	file_pos_z << "";
+	file_pos_z.close();
+	ofstream file_phi(pkg_loc + "/data/phi.txt");
+	file_phi << "";
+	file_phi.close();		
+	ofstream file_theta(pkg_loc + "/data/theta.txt");
+	file_theta << "";
+	file_theta.close();		
+	ofstream file_psi(pkg_loc + "/data/psi.txt");
+	file_psi << "";
+	file_psi.close();				
+	
+	ofstream file_pos_x_ref(pkg_loc + "/data/pos_x_ref.txt");
+	file_pos_x_ref << "";
+	file_pos_x_ref.close();
+	ofstream file_pos_y_ref(pkg_loc + "/data/pos_y_ref.txt");
+	file_pos_y_ref << "";
+	file_pos_y_ref.close();
+	ofstream file_pos_z_ref(pkg_loc + "/data/pos_z_ref.txt");
+	file_pos_z_ref << "";
+	file_pos_z_ref.close();		
+	ofstream file_psi_ref(pkg_loc + "/data/psi_ref.txt");
+	file_psi_ref << "";
+	file_psi_ref.close();				
+	
+	ofstream file_pos_x_err(pkg_loc + "/data/pos_x_err.txt");
+	file_pos_x_err << "";
+	file_pos_x_err.close();
+	ofstream file_pos_y_err(pkg_loc + "/data/pos_y_err.txt");
+	file_pos_y_err << "";
+	file_pos_y_err.close();
+	ofstream file_pos_z_err(pkg_loc + "/data/pos_z_err.txt");
+	file_pos_z_err << "";
+	file_pos_z_err.close();		
+	ofstream file_psi_err(pkg_loc + "/data/psi_err.txt");
+	file_psi_err << "";
+	file_psi_err.close();		
+	
+	ofstream file_vel_x_err(pkg_loc + "/data/vel_x_err.txt");
+	file_vel_x_err << "";
+	file_vel_x_err.close();
+	ofstream file_vel_y_err(pkg_loc + "/data/vel_y_err.txt");
+	file_vel_y_err << "";
+	file_vel_y_err.close();
+	ofstream file_vel_z_err(pkg_loc + "/data/vel_z_err.txt");
+	file_vel_z_err << "";
+	file_vel_z_err.close();
+	ofstream file_vel_psi_err(pkg_loc + "/data/vel_psi_err.txt");
+	file_vel_psi_err << "";
+	file_vel_psi_err.close();	
+	
+	ofstream file_uT(pkg_loc + "/data/uT.txt");
+	file_uT << "";
+	file_uT.close();
+	ofstream file_taub_x(pkg_loc + "/data/taub_x.txt");
+	file_taub_x << "";
+	file_taub_x.close();
+	ofstream file_taub_y(pkg_loc + "/data/taub_y.txt");
+	file_taub_y << "";
+	file_taub_y.close();
+	ofstream file_taub_z(pkg_loc + "/data/taub_z.txt");
+	file_taub_z << "";
+	file_taub_z.close();			
+	
+	ofstream file_est_dist_lin_x(pkg_loc + "/data/est_dist_lin_x.txt");
+	file_est_dist_lin_x << "";
+	file_est_dist_lin_x.close();
+	ofstream file_est_dist_lin_y(pkg_loc + "/data/est_dist_lin_y.txt");
+	file_est_dist_lin_y << "";
+	file_est_dist_lin_y.close();
+	ofstream file_est_dist_lin_z(pkg_loc + "/data/est_dist_lin_z.txt");
+	file_est_dist_lin_z << "";
+	file_est_dist_lin_z.close();
+	
+	ofstream file_est_dist_ang_x(pkg_loc + "/data/est_dist_ang_x.txt");
+	file_est_dist_ang_x << "";
+	file_est_dist_ang_x.close();
+	ofstream file_est_dist_ang_y(pkg_loc + "/data/est_dist_ang_y.txt");
+	file_est_dist_ang_y << "";
+	file_est_dist_ang_y.close();
+	ofstream file_est_dist_ang_z(pkg_loc + "/data/est_dist_ang_z.txt");
+	file_est_dist_ang_z << "";
+	file_est_dist_ang_z.close();
 }
 
 
@@ -644,39 +642,39 @@ void passivity_based_controller::log_data(){
 	ofstream file_vel_psi_err(pkg_loc + "/data/vel_psi_err.txt",std::ios_base::app);
 	file_vel_psi_err << _eta_b_dot(2)-_eta_ref_dot(2) <<endl;
 	file_vel_psi_err.close();		
-
-    ofstream file_uT(pkg_loc + "/data/uT.txt",std::ios_base::app);
-    file_uT << _u_T << endl;
-    file_uT.close();
-    ofstream file_taub_x(pkg_loc + "/data/taub_x.txt",std::ios_base::app);
-    file_taub_x << _tau_b(0) << endl;
-    file_taub_x.close();
-    ofstream file_taub_y(pkg_loc + "/data/taub_y.txt",std::ios_base::app);
-    file_taub_y << _tau_b(1) << endl;
-    file_taub_y.close();
-    ofstream file_taub_z(pkg_loc + "/data/taub_z.txt",std::ios_base::app);
-    file_taub_z << _tau_b(2) <<endl;
-    file_taub_z.close();		
-
-    ofstream file_est_dist_lin_x(pkg_loc + "/data/est_dist_lin_x.txt",std::ios_base::app);
-    file_est_dist_lin_x << _est_dist_lin(0) << endl ;
-    file_est_dist_lin_x.close();
-    ofstream file_est_dist_lin_y(pkg_loc + "/data/est_dist_lin_y.txt",std::ios_base::app);
-    file_est_dist_lin_y << _est_dist_lin(1) << endl ;
-    file_est_dist_lin_y.close();
-    ofstream file_est_dist_lin_z(pkg_loc + "/data/est_dist_lin_z.txt",std::ios_base::app);
-    file_est_dist_lin_z << _est_dist_lin(2) << endl ;
-    file_est_dist_lin_z.close();
-
-    ofstream file_est_dist_ang_x(pkg_loc + "/data/est_dist_ang_x.txt",std::ios_base::app);
-    file_est_dist_ang_x << _est_dist_ang(0) << endl ;
-    file_est_dist_ang_x.close();
-    ofstream file_est_dist_ang_y(pkg_loc + "/data/est_dist_ang_y.txt",std::ios_base::app);
-    file_est_dist_ang_y << _est_dist_ang(1) << endl ;
-    file_est_dist_ang_y.close();
-    ofstream file_est_dist_ang_z(pkg_loc + "/data/est_dist_ang_z.txt",std::ios_base::app);
-    file_est_dist_ang_z << _est_dist_ang(2) << endl ;
-    file_est_dist_ang_z.close();
+	
+	ofstream file_uT(pkg_loc + "/data/uT.txt",std::ios_base::app);
+	file_uT << _u_T << endl;
+	file_uT.close();
+	ofstream file_taub_x(pkg_loc + "/data/taub_x.txt",std::ios_base::app);
+	file_taub_x << _tau_b(0) << endl;
+	file_taub_x.close();
+	ofstream file_taub_y(pkg_loc + "/data/taub_y.txt",std::ios_base::app);
+	file_taub_y << _tau_b(1) << endl;
+	file_taub_y.close();
+	ofstream file_taub_z(pkg_loc + "/data/taub_z.txt",std::ios_base::app);
+	file_taub_z << _tau_b(2) <<endl;
+	file_taub_z.close();		
+	
+	ofstream file_est_dist_lin_x(pkg_loc + "/data/est_dist_lin_x.txt",std::ios_base::app);
+	file_est_dist_lin_x << _est_dist_lin(0) << endl ;
+	file_est_dist_lin_x.close();
+	ofstream file_est_dist_lin_y(pkg_loc + "/data/est_dist_lin_y.txt",std::ios_base::app);
+	file_est_dist_lin_y << _est_dist_lin(1) << endl ;
+	file_est_dist_lin_y.close();
+	ofstream file_est_dist_lin_z(pkg_loc + "/data/est_dist_lin_z.txt",std::ios_base::app);
+	file_est_dist_lin_z << _est_dist_lin(2) << endl ;
+	file_est_dist_lin_z.close();
+	
+	ofstream file_est_dist_ang_x(pkg_loc + "/data/est_dist_ang_x.txt",std::ios_base::app);
+	file_est_dist_ang_x << _est_dist_ang(0) << endl ;
+	file_est_dist_ang_x.close();
+	ofstream file_est_dist_ang_y(pkg_loc + "/data/est_dist_ang_y.txt",std::ios_base::app);
+	file_est_dist_ang_y << _est_dist_ang(1) << endl ;
+	file_est_dist_ang_y.close();
+	ofstream file_est_dist_ang_z(pkg_loc + "/data/est_dist_ang_z.txt",std::ios_base::app);
+	file_est_dist_ang_z << _est_dist_ang(2) << endl ;
+	file_est_dist_ang_z.close();
 
 }
 
